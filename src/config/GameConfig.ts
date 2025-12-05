@@ -35,6 +35,22 @@ export const GameConfig = {
   ATTACK_DURATION: 300,
   SPECIAL_MOVE_DURATION: 500,
   KNOCKDOWN_THRESHOLD: 50, // damage threshold for knockdown
+  HEAVY_HIT_THRESHOLD: 25, // damage threshold for heavy hit effects
+  
+  // Hit Stop (time freeze on hits)
+  HIT_STOP_LIGHT: 30, // ms for light hits
+  HIT_STOP_MEDIUM: 50, // ms for medium hits
+  HIT_STOP_HEAVY: 80, // ms for heavy hits
+  HIT_STOP_KNOCKDOWN: 120, // ms for knockdown hits
+  HIT_STOP_TIME_SCALE: 0.05, // time scale during hit stop (0.05 = 5% speed)
+  
+  // Hit Reactions
+  HIT_REACTION_DURATION: 150, // ms for hit reaction animation
+  HIT_STUN_DURATION: 200, // ms for stun state after hit
+  
+  // Input Buffering
+  INPUT_BUFFER_WINDOW: 200, // ms window to buffer inputs
+  COMBO_INPUT_BUFFER: 300, // ms window for combo inputs
 
   // Multiplayer
   SERVER_PORT: 3001,

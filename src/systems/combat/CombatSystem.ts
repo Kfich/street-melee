@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { Hitbox } from './Hitbox';
 import { BaseEntity } from '../../entities/base/BaseEntity';
 import { DamageInfo } from '../../types/GameTypes';
+import { GameConfig } from '../../config/GameConfig';
 
 /**
  * Combat system for handling attacks and damage
@@ -80,26 +81,63 @@ export class CombatSystem {
     }
     
     // Emit damage event for visual effects
-    const isHeavy = damageInfo.amount >= 25;
+    const isHeavy = damageInfo.amount >= GameConfig.HEAVY_HIT_THRESHOLD;
+    const isKnockdown = damageInfo.isKnockdown;
+    
+    // Emit hit stop event based on hit type
+    if (isKnockdown) {
+      this.scene.events.emit('hitStop', 'knockdown');
+    } else if (isHeavy) {
+      this.scene.events.emit('hitStop', 'heavy');
+    } else if (damageInfo.amount >= 15) {
+      this.scene.events.emit('hitStop', 'medium');
+    } else {
+      this.scene.events.emit('hitStop', 'light');
+    }
+    
     this.scene.events.emit('entityDamaged', {
       entity: target,
       damage: damageInfo.amount,
       x: target.sprite.x,
       y: target.sprite.y,
       isHeavy: isHeavy,
-      isKnockdown: damageInfo.isKnockdown
+      isKnockdown: isKnockdown
     });
 
-    // Apply knockback
+    // Apply knockback with improved curves
     if (damageInfo.knockback) {
       const body = target.sprite.body as Phaser.Physics.Arcade.Body;
       const facingRight = !hitbox.owner.flipX;
       const knockbackX = facingRight ? damageInfo.knockback.x : -damageInfo.knockback.x;
       
+      // Apply knockback with easing (smooth acceleration/deceleration)
+      // Start with full velocity, then apply drag
       body.setVelocityX(knockbackX);
       if (damageInfo.knockback.y !== 0) {
         body.setVelocityY(damageInfo.knockback.y);
       }
+      
+      // Apply knockback drag for smoother deceleration
+      // Use tween to gradually reduce knockback velocity
+      const knockbackDuration = damageInfo.isKnockdown ? 400 : 200;
+      const startVelX = knockbackX;
+      const startVelY = damageInfo.knockback.y || 0;
+      
+      this.scene.tweens.add({
+        targets: { value: 1 },
+        value: 0,
+        duration: knockbackDuration,
+        ease: 'Power2',
+        onUpdate: (tween) => {
+          const progress = tween.getValue();
+          if (progress !== null && progress !== undefined) {
+            body.setVelocityX(startVelX * progress);
+            if (startVelY !== 0) {
+              body.setVelocityY(startVelY * progress);
+            }
+          }
+        }
+      });
     }
 
     // Handle knockdown

@@ -13,6 +13,7 @@ import { HealthBar } from '../../ui/HealthBar';
 import { ComboCounter } from '../../ui/ComboCounter';
 import { WeaponIndicator } from '../../ui/WeaponIndicator';
 import { WaveNotification } from '../../ui/WaveNotification';
+import { BaseEntity } from '../../entities/base/BaseEntity';
 import { Hitbox } from '../../systems/combat/Hitbox';
 import { Enemy } from '../../entities/enemies/Enemy';
 import { WeaponManager } from '../../systems/weapon/WeaponManager';
@@ -447,17 +448,88 @@ export class GameScene extends Phaser.Scene {
   }
 
   private setupCombatEffects() {
+    // Listen for hit stop events
+    this.events.on('hitStop', (type: 'light' | 'medium' | 'heavy' | 'knockdown') => {
+      switch (type) {
+        case 'light':
+          this.visualEffects.hitStopLight();
+          break;
+        case 'medium':
+          this.visualEffects.hitStopMedium();
+          break;
+        case 'heavy':
+          this.visualEffects.hitStopHeavy();
+          break;
+        case 'knockdown':
+          this.visualEffects.hitStopKnockdown();
+          break;
+      }
+    });
+
     // Listen for damage events to create visual effects
     this.events.on('entityDamaged', (data: { entity: any; damage: number; x: number; y: number; isHeavy?: boolean; isKnockdown?: boolean }) => {
       const isHeavy = data.isHeavy || data.damage >= 25;
+      const isEnemy = data.entity?.sprite?.getData('isEnemy');
+      
       this.visualEffects.createHitMark(data.x, data.y, data.damage, isHeavy);
       this.visualEffects.createSmoke(data.x, data.y);
+      
+      // Blood particles for enemy hits
+      if (isEnemy) {
+        this.visualEffects.createBloodParticles(data.x, data.y, isHeavy ? 8 : 4);
+      }
       
       // Impact effect for knockdowns and heavy hits
       if (data.isKnockdown || isHeavy) {
         this.visualEffects.createImpactEffect(data.x, data.y, isHeavy);
       }
+      
+      // Trigger hit reaction on target entity
+      if (data.entity && data.entity.sprite) {
+        this.triggerHitReaction(data.entity, isHeavy || false, data.isKnockdown || false);
+      }
     });
+  }
+
+  /**
+   * Trigger hit reaction animation on entity
+   */
+  private triggerHitReaction(entity: BaseEntity, isHeavy: boolean, isKnockdown: boolean) {
+    if (isKnockdown) {
+      // Knockdown handled separately
+      return;
+    }
+
+    // Set hit reaction state
+    const currentState = entity.getState();
+    if (currentState !== 'attacking' && currentState !== 'knockedDown') {
+      entity.setState('hitReaction');
+      
+      // Flash effect
+      const sprite = entity.sprite;
+      sprite.setTint(0xff0000);
+      
+      // Brief stun/flinch animation
+      const duration = isHeavy ? GameConfig.HIT_STUN_DURATION : GameConfig.HIT_REACTION_DURATION;
+      
+      this.tweens.add({
+        targets: sprite,
+        alpha: 0.6,
+        duration: 50,
+        yoyo: true,
+        onComplete: () => {
+          sprite.clearTint();
+          sprite.setAlpha(1);
+          
+          // Return to previous state after reaction
+          this.time.delayedCall(duration, () => {
+            if (entity.getState() === 'hitReaction') {
+              entity.setState('idle');
+            }
+          });
+        }
+      });
+    }
 
     // Special move flash effects
     this.events.on('specialMovePerformed', (data?: { x?: number; y?: number; characterType?: string }) => {
@@ -475,7 +547,9 @@ export class GameScene extends Phaser.Scene {
         };
         const color = colors[data.characterType || ''] || 0x00ffff;
         this.visualEffects.flashSpecialMove(data.x, data.y, color);
-        this.visualEffects.screenShakeMedium(200);
+        // Create explosion effect for special moves
+        this.visualEffects.createSpecialMoveExplosion(data.x, data.y, color, 'medium');
+        this.visualEffects.screenShakeMedium(250);
       } else {
         // Full screen flash for special moves
         this.visualEffects.flashScreen(0x00ffff, 80, 0.3);
@@ -509,6 +583,20 @@ export class GameScene extends Phaser.Scene {
           this.visualEffects.createDust(data.x, data.y, 6);
           this.visualEffects.screenShakeMedium(200);
         }
+      }
+    });
+
+    // Landing effects
+    this.events.on('landingPerformed', (data?: { x?: number; y?: number }) => {
+      if (data?.x && data?.y) {
+        this.visualEffects.createLandingDust(data.x, data.y);
+      }
+    });
+
+    // Get-up effects
+    this.events.on('getUpPerformed', (data?: { x?: number; y?: number }) => {
+      if (data?.x && data?.y) {
+        this.visualEffects.createDust(data.x, data.y, 4);
       }
     });
   }

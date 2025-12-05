@@ -41,6 +41,10 @@ export class AnimationSystem {
       case 'jumping':
         animKey = `${characterType}_jump_${direction}`;
         break;
+      case 'landing':
+        // Use idle animation for landing (can be extended with landing animation later)
+        animKey = `${characterType}_idle_${direction}`;
+        break;
       case 'attacking':
         // Check if this is a jump attack or special move
         // This will be handled by the character class based on context
@@ -56,7 +60,11 @@ export class AnimationSystem {
         animKey = `${characterType}_attack_${direction}`;
         break;
       case 'knockedDown':
-        // Use idle animation for knocked down
+        // Use idle animation for knocked down (can be extended with knockdown animation later)
+        animKey = `${characterType}_idle_${direction}`;
+        break;
+      case 'hitReaction':
+        // Use idle animation for hit reaction (can be extended with flinch animation later)
         animKey = `${characterType}_idle_${direction}`;
         break;
       default:

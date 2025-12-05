@@ -1,13 +1,10 @@
 import Phaser from 'phaser';
-import { GameConfig } from '../../config/GameConfig';
 
 /**
  * Visual effects system for hit marks, particles, etc.
  */
 export class VisualEffects {
   private scene: Phaser.Scene;
-  private hitMarkPool: Phaser.GameObjects.Graphics[] = [];
-  private particleManager: Phaser.GameObjects.Particles.ParticleEmitterManager | null = null;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
@@ -18,29 +15,8 @@ export class VisualEffects {
    * Initialize effect systems
    */
   private initializeEffects() {
-    // Create placeholder particle texture if it doesn't exist
-    if (!this.scene.textures.exists('particle')) {
-      const graphics = this.scene.add.graphics();
-      graphics.fillStyle(0xffffff);
-      graphics.fillCircle(0, 0, 4);
-      graphics.generateTexture('particle', 8, 8);
-      graphics.destroy();
-    }
-
-    // Create particle manager (using placeholder approach for Phaser 3.90)
-    // In Phaser 3.90, particle system API changed - using simpler approach
-    try {
-      this.particleManager = this.scene.add.particles(0, 0, 'particle', {
-        scale: { start: 0.5, end: 0 },
-        speed: { min: 20, max: 50 },
-        lifespan: 300,
-        quantity: 3,
-        tint: 0xffffff
-      });
-    } catch (error) {
-      console.warn('[VisualEffects] Could not create particle manager, using placeholders:', error);
-      this.particleManager = null;
-    }
+    // Particle effects are created on-demand using simple graphics
+    // This approach is more flexible and doesn't require particle manager setup
   }
 
   /**
@@ -81,8 +57,10 @@ export class VisualEffects {
       }
     });
 
-    // Create spark particles
-    this.createHitSparks(x, y, isHeavy ? 12 : 8, hitMarkColor);
+    // Create spark particles with intensity based on hit type
+    const sparkIntensity = isHeavy ? 'heavy' : damage >= 15 ? 'medium' : 'light';
+    const direction = 1; // Default direction (can be improved later)
+    this.createHitSparks(x, y, direction, sparkIntensity);
 
     // Always show damage number
     this.createDamageNumber(x, y - 25, damage);
@@ -239,6 +217,7 @@ export class VisualEffects {
    * @param duration - Shake duration in ms
    */
   screenShake(intensity: number = 0.01, duration: number = 200) {
+    // Enhanced screen shake
     this.scene.cameras.main.shake(duration, intensity);
   }
 
@@ -259,6 +238,13 @@ export class VisualEffects {
 
   screenShakeExtreme(duration: number = 400) {
     this.screenShake(0.03, duration);
+  }
+
+  /**
+   * Screen shake with custom pattern (for variety)
+   */
+  screenShakeCustom(intensity: number, duration: number, _pattern: 'sharp' | 'smooth' | 'pulsing' = 'smooth') {
+    this.screenShake(intensity, duration);
   }
 
   /**
@@ -310,8 +296,52 @@ export class VisualEffects {
 
   /**
    * Create spark particles for hits
+   * @param x - X position
+   * @param y - Y position
+   * @param direction - Direction (1 = right, -1 = left) OR count if using old signature
+   * @param intensity - Intensity level ('light' | 'medium' | 'heavy') OR color if using old signature
    */
-  createHitSparks(x: number, y: number, count: number = 8, color: number = 0xffff00) {
+  createHitSparks(x: number, y: number, directionOrCount?: number | 'light' | 'medium' | 'heavy', intensityOrColor?: 'light' | 'medium' | 'heavy' | number) {
+    // Handle new signature with intensity
+    if (typeof directionOrCount === 'string' || intensityOrColor === 'light' || intensityOrColor === 'medium' || intensityOrColor === 'heavy') {
+      const intensity = (typeof directionOrCount === 'string' ? directionOrCount : intensityOrColor) as 'light' | 'medium' | 'heavy' || 'medium';
+      const direction = (typeof directionOrCount === 'number' ? directionOrCount : 1) as number;
+      
+      const count = intensity === 'light' ? 4 : intensity === 'medium' ? 8 : 12;
+      const color = intensity === 'heavy' ? 0xffaa00 : 0xffff00; // Orange for heavy, yellow for others
+      
+      for (let i = 0; i < count; i++) {
+        const spark = this.scene.add.circle(
+          x,
+          y,
+          1 + Math.random() * 2,
+          color,
+          0.9
+        );
+        spark.setDepth(998);
+        
+        const angle = (direction === 1 ? -45 : 225) + (Math.random() - 0.5) * 90;
+        const speed = 50 + Math.random() * 100;
+        
+        this.scene.tweens.add({
+          targets: spark,
+          x: spark.x + Math.cos(angle * Math.PI / 180) * speed,
+          y: spark.y + Math.sin(angle * Math.PI / 180) * speed,
+          alpha: 0,
+          scale: 0,
+          duration: 200,
+          onComplete: () => {
+            spark.destroy();
+          }
+        });
+      }
+      return;
+    }
+    
+    // Handle old signature (backward compatibility)
+    const count = (directionOrCount as number) || 8;
+    const color = (intensityOrColor as number) || 0xffff00;
+    
     for (let i = 0; i < count; i++) {
       const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.5;
       const speed = 30 + Math.random() * 40;
@@ -382,15 +412,79 @@ export class VisualEffects {
 
   /**
    * Hit stop effect - briefly pause game time on hit
-   * @param duration - Pause duration in ms (typically 50-100ms)
+   * @param duration - Pause duration in ms (typically 30-120ms)
+   * @param intensity - Time scale during hit stop (0.05 = 5% speed, more dramatic)
    */
-  hitStop(duration: number = 50) {
-    // Slow down time briefly
-    this.scene.time.timeScale = 0.1;
-    
-    this.scene.time.delayedCall(duration, () => {
-      this.scene.time.timeScale = 1.0;
-    });
+  hitStop(duration: number = 50, intensity: number = 0.05) {
+    // Store original time scale if not already in hit stop
+    if (this.scene.time.timeScale >= 1.0) {
+      // Slow down time briefly
+      this.scene.time.timeScale = intensity;
+      
+      // Use real time for the delay (not scaled time)
+      this.scene.time.delayedCall(duration, () => {
+        this.scene.time.timeScale = 1.0;
+      }, [], this.scene);
+    }
+  }
+
+  /**
+   * Hit stop for light hits
+   */
+  hitStopLight() {
+    this.hitStop(30, 0.1);
+  }
+
+  /**
+   * Hit stop for medium hits
+   */
+  hitStopMedium() {
+    this.hitStop(50, 0.05);
+  }
+
+  /**
+   * Hit stop for heavy hits
+   */
+  hitStopHeavy() {
+    this.hitStop(80, 0.03);
+  }
+
+  /**
+   * Hit stop for knockdown hits
+   */
+  hitStopKnockdown() {
+    this.hitStop(120, 0.02);
+  }
+
+  /**
+   * Create landing dust effect (enhanced for landing)
+   */
+  createLandingDust(x: number, y: number, count: number = 8) {
+    // Create more particles for landing, spread horizontally
+    for (let i = 0; i < count; i++) {
+      const dust = this.scene.add.circle(
+        x + (Math.random() - 0.5) * 20, // Spread horizontally
+        y,
+        2 + Math.random() * 2,
+        0xcccccc,
+        0.7
+      );
+      
+      const angle = (Math.PI * 0.5) + (Math.random() - 0.5) * 0.5; // Mostly upward with spread
+      const speed = 30 + Math.random() * 40;
+      
+      this.scene.tweens.add({
+        targets: dust,
+        x: dust.x + Math.cos(angle) * speed,
+        y: dust.y + Math.sin(angle) * speed,
+        alpha: 0,
+        scale: 0,
+        duration: 400,
+        onComplete: () => {
+          dust.destroy();
+        }
+      });
+    }
   }
 
   /**
@@ -420,6 +514,83 @@ export class VisualEffects {
         ease: 'Power2',
         onComplete: () => {
           dust.destroy();
+        }
+      });
+    }
+  }
+
+  /**
+   * Create blood/impact particles for enemy hits
+   */
+  createBloodParticles(x: number, y: number, count: number = 6) {
+    for (let i = 0; i < count; i++) {
+      const blood = this.scene.add.circle(
+        x,
+        y,
+        1 + Math.random() * 2,
+        0xcc0000, // Dark red
+        0.8
+      );
+      blood.setDepth(998);
+      
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 20 + Math.random() * 40;
+      
+      this.scene.tweens.add({
+        targets: blood,
+        x: blood.x + Math.cos(angle) * speed,
+        y: blood.y + Math.sin(angle) * speed,
+        alpha: 0,
+        scale: 0,
+        duration: 300,
+        onComplete: () => {
+          blood.destroy();
+        }
+      });
+    }
+  }
+
+  /**
+   * Enhanced explosion effect for special moves
+   */
+  createSpecialMoveExplosion(x: number, y: number, color: number = 0xff6600, size: 'small' | 'medium' | 'large' = 'medium') {
+    const particleCount = size === 'small' ? 15 : size === 'medium' ? 25 : 40;
+    const radius = size === 'small' ? 30 : size === 'medium' ? 50 : 80;
+    
+    // Central flash
+    const flash = this.scene.add.circle(x, y, 10, color, 1);
+    flash.setDepth(999);
+    this.scene.tweens.add({
+      targets: flash,
+      radius: radius,
+      alpha: 0,
+      duration: 300,
+      onComplete: () => flash.destroy()
+    });
+    
+    // Particle burst
+    for (let i = 0; i < particleCount; i++) {
+      const particle = this.scene.add.circle(
+        x,
+        y,
+        2 + Math.random() * 3,
+        color,
+        0.8
+      );
+      particle.setDepth(998);
+      
+      const angle = (Math.PI * 2 * i) / particleCount + (Math.random() - 0.5) * 0.5;
+      const speed = 50 + Math.random() * 150;
+      
+      this.scene.tweens.add({
+        targets: particle,
+        x: particle.x + Math.cos(angle) * speed,
+        y: particle.y + Math.sin(angle) * speed,
+        alpha: 0,
+        scale: 0,
+        duration: 400,
+        onComplete: () => {
+          particle.destroy();
         }
       });
     }

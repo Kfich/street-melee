@@ -5,7 +5,7 @@ import { CharacterType } from '../game/types/CharacterType';
 
 export type GameState = 'menu' | 'characterSelect' | 'playing' | 'paused' | 'gameOver';
 
-export type PlayerState = 'idle' | 'walking' | 'jumping' | 'attacking' | 'grabbed' | 'grabbing' | 'throwing' | 'hit' | 'knockedDown';
+export type PlayerState = 'idle' | 'walking' | 'jumping' | 'attacking' | 'grabbed' | 'grabbing' | 'throwing' | 'hit' | 'knockedDown' | 'hitReaction' | 'landing';
 
 export interface PlayerInput {
   left: boolean;

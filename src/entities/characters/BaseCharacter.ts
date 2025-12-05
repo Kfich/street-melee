@@ -8,6 +8,7 @@ import { AnimationSystem } from '../../systems/animation/AnimationSystem';
 import { ComboSystem } from '../../systems/combat/ComboSystem';
 import { SpecialMoveSystem } from '../../systems/combat/SpecialMoveSystem';
 import { DashDetector } from '../../systems/input/DashDetector';
+import { InputBuffer } from '../../systems/input/InputBuffer';
 import { Weapon } from '../weapons/Weapon';
 import { getSpriteConfig } from '../../systems/animation/SpriteConfig';
 import { GrabSystem } from '../../systems/combat/GrabSystem';
@@ -23,6 +24,7 @@ export abstract class BaseCharacter extends BaseEntity {
   protected comboSystem?: ComboSystem;
   protected specialMoveSystem?: SpecialMoveSystem;
   protected dashDetector: DashDetector;
+  protected inputBuffer: InputBuffer;
   protected currentHitbox?: Hitbox;
   protected attackCooldown: number = 0;
   protected isPerformingSpecial: boolean = false;
@@ -32,6 +34,10 @@ export abstract class BaseCharacter extends BaseEntity {
   protected dropCooldown: number = 300; // Prevent accidental double drops
   protected grabSystem?: GrabSystem;
   protected grabbedTarget: BaseEntity | null = null;
+  protected wasInAir: boolean = false; // Track if character was in air last frame
+  protected landingCooldown: number = 0; // Cooldown for landing animation
+  protected knockdownCooldown: number = 0; // Cooldown for knockdown state
+  protected invincibilityFrames: number = 0; // Invincibility frames after knockdown/get-up
 
   constructor(
     scene: Phaser.Scene,
@@ -55,6 +61,7 @@ export abstract class BaseCharacter extends BaseEntity {
     this.specialMoveSystem = specialMoveSystem;
     this.grabSystem = grabSystem;
     this.dashDetector = new DashDetector();
+    this.inputBuffer = new InputBuffer();
     this.setupCharacter();
   }
 
@@ -208,6 +215,12 @@ export abstract class BaseCharacter extends BaseEntity {
   handleInput(input: PlayerInput): void {
     // Check if sprite and body are valid
     if (!this.sprite || !this.sprite.body || !this.sprite.active) {
+      return;
+    }
+
+    // If we can't attack right now but attack is pressed, buffer it
+    if (input.attack && !this.canAttack() && this.state !== 'attacking') {
+      this.inputBuffer.bufferInput(this.playerIndex, input, true);
       return;
     }
 
@@ -402,6 +415,19 @@ export abstract class BaseCharacter extends BaseEntity {
     // Update attack cooldown
     if (this.attackCooldown > 0) {
       this.attackCooldown -= 16; // ~60fps
+    }
+
+    // Update input buffer
+    this.inputBuffer.update();
+
+    // Check for buffered inputs when attack cooldown is ending
+    // This allows combos to flow more smoothly
+    if (this.attackCooldown <= GameConfig.INPUT_BUFFER_WINDOW && this.attackCooldown > 0) {
+      const bufferedInput = this.inputBuffer.getBufferedInput(this.playerIndex, true);
+      if (bufferedInput && bufferedInput.attack && this.canAttack()) {
+        // Execute buffered attack
+        this.handleInput(bufferedInput);
+      }
     }
 
     // Update grab position if grabbing
@@ -837,6 +863,11 @@ export abstract class BaseCharacter extends BaseEntity {
    * Override takeDamage to drop weapon (only when taking damage, not healing)
    */
   takeDamage(amount: number): void {
+    // Check invincibility frames first (from base class)
+    if ((this as any).invincibilityFrames > 0) {
+      return; // Ignore damage during invincibility
+    }
+    
     super.takeDamage(amount);
     
     // Drop weapon when taking damage (only if taking damage, not healing)
