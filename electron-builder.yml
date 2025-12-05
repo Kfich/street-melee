@@ -1,0 +1,15 @@
+appId: com.streetmelee.app
+productName: Street Melee
+directories:
+  output: release
+files:
+  - dist/**
+  - package.json
+mac:
+  category: public.app-category.games
+  target: dmg
+win:
+  target: nsis
+linux:
+  target: AppImage
+
