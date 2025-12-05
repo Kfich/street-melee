@@ -1,16 +1,16 @@
-import Phaser from 'phaser';
+import { BaseMenuScene } from '../../ui/menu/BaseMenuScene';
+import { MenuContainer } from '../../ui/menu/MenuContainer';
 import { AudioManager } from '../../systems/audio/AudioManager';
 import { MusicContext } from '../../systems/audio/MusicState';
 
-export class GameOverScene extends Phaser.Scene {
+export class GameOverScene extends BaseMenuScene {
   private isVictory: boolean = false;
   private score: number = 0;
-  // @ts-ignore - Assigned for display purposes, not read after assignment
-  private finalScoreText?: Phaser.GameObjects.Text;
-  private audioManager!: AudioManager;
+  private titleText?: Phaser.GameObjects.Text;
+  private scoreText?: Phaser.GameObjects.Text;
 
   constructor() {
-    super({ key: 'GameOverScene' });
+    super('GameOverScene');
   }
 
   init(data: { victory?: boolean; score?: number }) {
@@ -19,96 +19,88 @@ export class GameOverScene extends Phaser.Scene {
   }
 
   create() {
+    super.create();
+
     const { width, height } = this.cameras.main;
-    
-    // Initialize audio manager
+
+    // Initialize audio manager (override base class)
     this.audioManager = new AudioManager(this);
-    
+
     // Stop gameplay music first
     this.audioManager.stopMusic(true, 500);
-    
-    // Play game over sound (with delay to ensure audio is ready)
+
+    // Play game over sound
     this.time.delayedCall(100, () => {
       if (this.isVictory) {
-        this.audioManager.playSound('levelAdvance');
+        this.audioManager?.playSound('levelAdvance');
       } else {
-        this.audioManager.playSound('gameOver');
-        // Play game over screen music after a delay
+        this.audioManager?.playSound('gameOver');
         this.time.delayedCall(500, () => {
-          this.audioManager.playMusicWithContext('dialogue', MusicContext.GAME_OVER, false);
+          this.audioManager?.playMusicWithContext('dialogue', MusicContext.GAME_OVER, false);
         });
       }
     });
-    // Background
-    this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.9);
 
-    // Title
+    // Darker background for game over
+    if (this.background) {
+      this.background.setFillStyle(0x000000, 0.95);
+    }
+
+    // Create title
     const titleText = this.isVictory ? 'VICTORY!' : 'GAME OVER';
-    const titleColor = this.isVictory ? '#00ff00' : '#ff0000';
+    const titleColor = this.isVictory ? 0x00ff00 : 0xff0000;
 
-    this.add.text(width / 2, height / 3, titleText, {
+    this.titleText = this.add.text(width / 2, height / 3, titleText, {
       fontSize: '80px',
-      fontFamily: 'Arial',
-      color: titleColor,
+      fontFamily: this.theme.typography.titleFont,
+      color: `#${titleColor.toString(16).padStart(6, '0')}`,
       stroke: '#000000',
-      strokeThickness: 6,
-      fontStyle: 'bold'
-    }).setOrigin(0.5);
-
-    // Score
-    this.finalScoreText = this.add.text(width / 2, height / 2 - 50, `Final Score: ${this.score}`, {
-      fontSize: '36px',
-      color: '#ffffff'
-    }).setOrigin(0.5);
-
-    // Menu options
-    const menuOptions = [
-      { text: 'PLAY AGAIN', action: () => this.playAgain() },
-      { text: 'MAIN MENU', action: () => this.returnToMenu() }
-    ];
-
-    const startY = height / 2 + 100;
-    const spacing = 80;
-
-    menuOptions.forEach((option, index) => {
-      const menuItem = this.add.text(width / 2, startY + (index * spacing), option.text, {
-        fontSize: '40px',
-        fontFamily: 'Arial',
-        color: index === 0 ? '#ffff00' : '#ffffff',
-        stroke: '#000000',
-        strokeThickness: 2
-      }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-
-      menuItem.on('pointerdown', () => {
-        this.audioManager.playSound('menuSelect');
-        option.action();
-      });
-      menuItem.on('pointerover', () => {
-        this.audioManager.playSound('menuSelect', 0.5);
-        menuItem.setStyle({ color: '#ffff00' });
-      });
-      menuItem.on('pointerout', () => {
-        menuItem.setStyle({ color: index === 0 ? '#ffff00' : '#ffffff' });
-      });
+      strokeThickness: this.theme.typography.titleStroke,
+      fontStyle: 'bold',
     });
+    this.titleText.setOrigin(0.5).setDepth(1001);
+
+    // Create score text
+    this.scoreText = this.add.text(width / 2, height / 2 - 30, `Final Score: ${this.score}`, {
+      fontSize: '36px',
+      fontFamily: this.theme.typography.itemFont,
+      color: `#${this.theme.colors.text.toString(16).padStart(6, '0')}`,
+    });
+    this.scoreText.setOrigin(0.5).setDepth(1001);
+
+    // Create menu
+    this.createMenu();
+  }
+
+  protected createMenu() {
+    const { width, height } = this.cameras.main;
+
+    // Create menu container
+    this.menuContainer = new MenuContainer(
+      this,
+      width / 2,
+      height / 2 + 80,
+      '',
+      this.theme,
+      undefined,
+      this.audioManager
+    );
+
+    // Add menu buttons
+    this.menuContainer.addButton('PLAY AGAIN', () => this.playAgain());
+    this.menuContainer.addButton('MAIN MENU', () => this.returnToMenu());
 
     // Keyboard controls
-    this.input.keyboard?.on('keydown-ENTER', () => {
-      this.audioManager.playSound('menuSelect');
-      menuOptions[0].action();
-    });
-
     this.input.keyboard?.on('keydown-ESC', () => {
-      this.audioManager.playSound('menuSelect');
-      menuOptions[1].action();
+      if (this.audioManager) {
+        this.audioManager.playSound('menuSelect');
+      }
+      this.returnToMenu();
     });
   }
 
-  shutdown() {
-    // Stop music when leaving scene
-    if (this.audioManager) {
-      this.audioManager.stopMusic();
-    }
+  protected playMenuMusic() {
+    // Music handled in create()
   }
 
   private playAgain() {
@@ -117,6 +109,12 @@ export class GameOverScene extends Phaser.Scene {
 
   private returnToMenu() {
     this.scene.start('MainMenuScene');
+  }
+
+  shutdown() {
+    if (this.audioManager) {
+      this.audioManager.stopMusic();
+    }
   }
 }
 

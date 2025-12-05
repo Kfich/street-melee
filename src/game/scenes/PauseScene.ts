@@ -1,12 +1,12 @@
-import Phaser from 'phaser';
+import { BaseMenuScene } from '../../ui/menu/BaseMenuScene';
+import { MenuContainer } from '../../ui/menu/MenuContainer';
 import { AudioManager } from '../../systems/audio/AudioManager';
 
-export class PauseScene extends Phaser.Scene {
+export class PauseScene extends BaseMenuScene {
   private gameSceneKey: string = 'GameScene';
-  private audioManager?: AudioManager;
 
   constructor() {
-    super({ key: 'PauseScene' });
+    super('PauseScene');
   }
 
   init(data: { gameSceneKey?: string }) {
@@ -26,57 +26,41 @@ export class PauseScene extends Phaser.Scene {
       }
     }
 
-    const { width, height } = this.cameras.main;
+    super.create();
 
-    // Semi-transparent overlay
-    this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.7);
-
-    // Pause title
-    this.add.text(width / 2, height / 2 - 150, 'PAUSED', {
-      fontSize: '72px',
-      fontFamily: 'Arial',
-      color: '#ffffff',
-      stroke: '#000000',
-      strokeThickness: 6,
-      fontStyle: 'bold'
-    }).setOrigin(0.5);
-
-    // Menu options
-    const menuOptions = [
-      { text: 'RESUME', action: () => this.resume() },
-      { text: 'SETTINGS', action: () => this.openSettings() },
-      { text: 'MAIN MENU', action: () => this.returnToMenu() }
-    ];
-
-    const startY = height / 2;
-    const spacing = 70;
-
-    menuOptions.forEach((option, index) => {
-      const menuItem = this.add.text(width / 2, startY + (index * spacing), option.text, {
-        fontSize: '40px',
-        fontFamily: 'Arial',
-        color: index === 0 ? '#ffff00' : '#ffffff',
-        stroke: '#000000',
-        strokeThickness: 2
-      }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-
-      menuItem.on('pointerdown', option.action);
-      menuItem.on('pointerover', () => {
-        menuItem.setStyle({ color: '#ffff00' });
-      });
-      menuItem.on('pointerout', () => {
-        menuItem.setStyle({ color: index === 0 ? '#ffff00' : '#ffffff' });
-      });
-    });
+    // Semi-transparent overlay (darker for pause)
+    if (this.background) {
+      this.background.setFillStyle(0x000000, 0.8);
+    }
 
     // Keyboard controls
     this.input.keyboard?.on('keydown-ESC', () => {
       this.resume();
     });
+  }
 
-    this.input.keyboard?.on('keydown-ENTER', () => {
-      menuOptions[0].action();
-    });
+  protected createMenu() {
+    const { width, height } = this.cameras.main;
+
+    // Create menu container
+    this.menuContainer = new MenuContainer(
+      this,
+      width / 2,
+      height / 2 - 50,
+      'PAUSED',
+      this.theme,
+      undefined,
+      this.audioManager
+    );
+
+    // Add menu buttons
+    this.menuContainer.addButton('RESUME', () => this.resume());
+    this.menuContainer.addButton('SETTINGS', () => this.openSettings());
+    this.menuContainer.addButton('MAIN MENU', () => this.returnToMenu());
+  }
+
+  protected playMenuMusic() {
+    // Don't play music in pause menu
   }
 
   private resume() {
@@ -89,8 +73,9 @@ export class PauseScene extends Phaser.Scene {
   }
 
   private openSettings() {
-    this.scene.pause(this.gameSceneKey);
-    this.scene.launch('SettingsScene', { returnScene: this.gameSceneKey });
+    // Stop pause scene and launch settings, passing pause scene key so we can return
+    this.scene.stop();
+    this.scene.launch('SettingsScene', { returnScene: 'PauseScene', gameSceneKey: this.gameSceneKey });
   }
 
   private returnToMenu() {

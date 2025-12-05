@@ -1,141 +1,141 @@
-import Phaser from 'phaser';
+import { BaseMenuScene } from '../../ui/menu/BaseMenuScene';
+import { MenuButton } from '../../ui/menu/MenuButton';
 import { MultiplayerClient } from '../../multiplayer/Client';
 
-export class MultiplayerMenuScene extends Phaser.Scene {
+export class MultiplayerMenuScene extends BaseMenuScene {
   private multiplayerClient?: MultiplayerClient;
   private roomIdInput?: Phaser.GameObjects.DOMElement;
   private roomIdText?: Phaser.GameObjects.Text;
   private statusText?: Phaser.GameObjects.Text;
   private isConnected: boolean = false;
+  private createButton?: MenuButton;
+  private joinButton?: MenuButton;
+  private backButton?: MenuButton;
+  private startButton?: MenuButton;
 
   constructor() {
-    super({ key: 'MultiplayerMenuScene' });
+    super('MultiplayerMenuScene');
   }
 
-  create() {
+  protected createMenu() {
     const { width, height } = this.cameras.main;
 
     // Title
-    this.add.text(width / 2, 100, 'MULTIPLAYER', {
-      fontSize: '64px',
-      fontFamily: 'Arial',
-      color: '#ffffff',
+    const title = this.add.text(width / 2, 80, 'MULTIPLAYER', {
+      fontSize: this.theme.typography.titleSize,
+      fontFamily: this.theme.typography.titleFont,
+      color: `#${this.theme.colors.text.toString(16).padStart(6, '0')}`,
       stroke: '#000000',
-      strokeThickness: 4
-    }).setOrigin(0.5);
+      strokeThickness: this.theme.typography.titleStroke,
+      fontStyle: 'bold',
+    });
+    title.setOrigin(0.5).setDepth(1001);
 
     // Status text
-    this.statusText = this.add.text(width / 2, 200, 'Connecting to server...', {
+    this.statusText = this.add.text(width / 2, 150, 'Connecting to server...', {
       fontSize: '24px',
-      color: '#ffff00'
-    }).setOrigin(0.5);
+      fontFamily: this.theme.typography.labelFont,
+      color: `#${this.theme.colors.selected.toString(16).padStart(6, '0')}`,
+    });
+    this.statusText.setOrigin(0.5).setDepth(1001);
 
     // Initialize multiplayer client
     this.multiplayerClient = new MultiplayerClient();
     this.setupMultiplayerCallbacks();
 
     // Create Room button
-    const createButton = this.add.text(width / 2, height / 2 - 60, 'CREATE ROOM', {
-      fontSize: '36px',
-      fontFamily: 'Arial',
-      color: '#ffffff',
-      stroke: '#000000',
-      strokeThickness: 2
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-
-    createButton.on('pointerdown', () => {
-      if (this.isConnected) {
-        this.multiplayerClient?.createRoom();
+    this.createButton = new MenuButton(
+      this,
+      width / 2,
+      height / 2 - 40,
+      'CREATE ROOM',
+      this.theme,
+      () => {
+        if (this.isConnected) {
+          this.multiplayerClient?.createRoom();
+        }
       }
-    });
+    );
 
-    createButton.on('pointerover', () => {
-      createButton.setStyle({ color: '#ffff00' });
+    // Join Room section label
+    const joinLabel = this.add.text(width / 2, height / 2 + 30, 'JOIN ROOM', {
+      fontSize: '28px',
+      fontFamily: this.theme.typography.itemFont,
+      color: `#${this.theme.colors.text.toString(16).padStart(6, '0')}`,
     });
-
-    createButton.on('pointerout', () => {
-      createButton.setStyle({ color: '#ffffff' });
-    });
-
-    // Join Room section
-    this.add.text(width / 2, height / 2 + 40, 'JOIN ROOM', {
-      fontSize: '32px',
-      color: '#ffffff'
-    }).setOrigin(0.5);
+    joinLabel.setOrigin(0.5).setDepth(1001);
 
     // Room ID input (using DOM element for text input)
     const inputX = width / 2;
-    const inputY = height / 2 + 100;
+    const inputY = height / 2 + 90;
 
-    // Create input field using DOM
     this.roomIdInput = this.add.dom(inputX, inputY, 'input', {
       type: 'text',
       placeholder: 'Enter Room ID',
-      style: 'width: 300px; height: 40px; font-size: 20px; text-align: center;'
+      style: 'width: 300px; height: 40px; font-size: 20px; text-align: center; background: rgba(26, 26, 46, 0.9); color: #ffffff; border: 2px solid #ffffff; border-radius: 4px;',
     });
+    this.roomIdInput.setDepth(1001);
 
     // Room ID display
-    this.roomIdText = this.add.text(width / 2, inputY + 60, '', {
+    this.roomIdText = this.add.text(width / 2, inputY + 50, '', {
       fontSize: '20px',
-      color: '#00ff00'
-    }).setOrigin(0.5);
+      fontFamily: this.theme.typography.labelFont,
+      color: `#00ff00`,
+    });
+    this.roomIdText.setOrigin(0.5).setDepth(1001);
 
     // Join button
-    const joinButton = this.add.text(width / 2, inputY + 100, 'JOIN', {
-      fontSize: '32px',
-      fontFamily: 'Arial',
-      color: '#ffffff',
-      stroke: '#000000',
-      strokeThickness: 2
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-
-    joinButton.on('pointerdown', () => {
-      if (this.isConnected && this.roomIdInput) {
-        const inputElement = this.roomIdInput.node as HTMLInputElement;
-        const roomId = inputElement.value.trim();
-        if (roomId) {
-          this.multiplayerClient?.joinRoom(roomId);
+    this.joinButton = new MenuButton(
+      this,
+      width / 2,
+      inputY + 90,
+      'JOIN',
+      this.theme,
+      () => {
+        if (this.isConnected && this.roomIdInput) {
+          const inputElement = this.roomIdInput.node as HTMLInputElement;
+          const roomId = inputElement.value.trim();
+          if (roomId) {
+            this.multiplayerClient?.joinRoom(roomId);
+          }
         }
       }
-    });
-
-    // Back button
-    const backButton = this.add.text(width / 2, height - 80, 'BACK', {
-      fontSize: '32px',
-      fontFamily: 'Arial',
-      color: '#ffff00',
-      stroke: '#000000',
-      strokeThickness: 2
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-
-    backButton.on('pointerdown', () => {
-      this.multiplayerClient?.disconnect();
-      this.scene.start('MainMenuScene');
-    });
+    );
 
     // Start button (appears when in room)
-    const startButton = this.add.text(width / 2, height - 150, 'START GAME', {
-      fontSize: '36px',
-      fontFamily: 'Arial',
-      color: '#00ff00',
-      stroke: '#000000',
-      strokeThickness: 2
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true }).setVisible(false);
-
-    startButton.on('pointerdown', () => {
-      if (this.roomIdText && this.roomIdText.text) {
-        this.scene.start('CharacterSelectScene', {
-          isMultiplayer: true,
-          roomId: this.roomIdText.text
-        });
+    this.startButton = new MenuButton(
+      this,
+      width / 2,
+      height - 120,
+      'START GAME',
+      this.theme,
+      () => {
+        if (this.roomIdText && this.roomIdText.text) {
+          const roomId = this.roomIdText.text.replace('Room ID: ', '');
+          this.scene.start('CharacterSelectScene', {
+            isMultiplayer: true,
+            roomId: roomId,
+          });
+        }
       }
-    });
+    );
+    this.startButton.setVisible(false);
+
+    // Back button
+    this.backButton = new MenuButton(
+      this,
+      width / 2,
+      height - 60,
+      'BACK',
+      this.theme,
+      () => {
+        this.multiplayerClient?.disconnect();
+        this.scene.start('MainMenuScene');
+      }
+    );
 
     // Connect to server
     this.multiplayerClient.connect();
-
-    // Store references
-    this.data.set('startButton', startButton);
   }
 
   private setupMultiplayerCallbacks() {
@@ -144,30 +144,28 @@ export class MultiplayerMenuScene extends Phaser.Scene {
     this.multiplayerClient.onRoomCreatedCallback((roomId) => {
       if (this.roomIdText) {
         this.roomIdText.setText(`Room ID: ${roomId}`);
-        this.roomIdText.setStyle({ color: '#00ff00' });
+        this.roomIdText.setColor('#00ff00');
       }
       if (this.statusText) {
         this.statusText.setText('Room created! Waiting for players...');
-        this.statusText.setStyle({ color: '#00ff00' });
+        this.statusText.setColor('#00ff00');
       }
-      const startButton = this.data.get('startButton') as Phaser.GameObjects.Text;
-      if (startButton) {
-        startButton.setVisible(true);
+      if (this.startButton) {
+        this.startButton.setVisible(true);
       }
     });
 
     this.multiplayerClient.onRoomJoinedCallback((roomId) => {
       if (this.roomIdText) {
         this.roomIdText.setText(`Room ID: ${roomId}`);
-        this.roomIdText.setStyle({ color: '#00ff00' });
+        this.roomIdText.setColor('#00ff00');
       }
       if (this.statusText) {
         this.statusText.setText('Joined room! Ready to play!');
-        this.statusText.setStyle({ color: '#00ff00' });
+        this.statusText.setColor('#00ff00');
       }
-      const startButton = this.data.get('startButton') as Phaser.GameObjects.Text;
-      if (startButton) {
-        startButton.setVisible(true);
+      if (this.startButton) {
+        this.startButton.setVisible(true);
       }
     });
 
@@ -177,10 +175,10 @@ export class MultiplayerMenuScene extends Phaser.Scene {
         this.isConnected = this.multiplayerClient.getIsConnected();
         if (this.isConnected && this.statusText) {
           this.statusText.setText('Connected to server');
-          this.statusText.setStyle({ color: '#00ff00' });
+          this.statusText.setColor('#00ff00');
         } else if (!this.isConnected && this.statusText) {
           this.statusText.setText('Connecting to server...');
-          this.statusText.setStyle({ color: '#ffff00' });
+          this.statusText.setColor('#ffff00');
         }
       }
     };
@@ -189,15 +187,37 @@ export class MultiplayerMenuScene extends Phaser.Scene {
     this.time.addEvent({
       delay: 500,
       callback: checkConnection,
-      loop: true
+      loop: true,
     });
 
     this.multiplayerClient.onErrorCallback((error) => {
       if (this.statusText) {
         this.statusText.setText(`Error: ${error}`);
-        this.statusText.setStyle({ color: '#ff0000' });
+        this.statusText.setColor('#ff0000');
       }
     });
+  }
+
+  protected playMenuMusic() {
+    // Don't play music in multiplayer menu
+  }
+
+  shutdown() {
+    if (this.createButton) {
+      this.createButton.destroy();
+    }
+    if (this.joinButton) {
+      this.joinButton.destroy();
+    }
+    if (this.backButton) {
+      this.backButton.destroy();
+    }
+    if (this.startButton) {
+      this.startButton.destroy();
+    }
+    if (this.multiplayerClient) {
+      this.multiplayerClient.disconnect();
+    }
   }
 }
 

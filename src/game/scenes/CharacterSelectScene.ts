@@ -1,14 +1,19 @@
-import Phaser from 'phaser';
+import { BaseMenuScene } from '../../ui/menu/BaseMenuScene';
+import { MenuButton } from '../../ui/menu/MenuButton';
+import { CharacterSelectBox } from '../../ui/menu/CharacterSelectBox';
 import { CharacterType } from '../types/CharacterType';
 
-export class CharacterSelectScene extends Phaser.Scene {
+export class CharacterSelectScene extends BaseMenuScene {
   private selectedCharacters: (CharacterType | null)[] = [null, null];
   private currentPlayer: number = 0;
   private isMultiplayer: boolean = false;
   private roomId?: string;
+  private characterBoxes: CharacterSelectBox[] = [];
+  private playerText?: Phaser.GameObjects.Text;
+  private startButton?: MenuButton;
 
   constructor() {
-    super({ key: 'CharacterSelectScene' });
+    super('CharacterSelectScene');
   }
 
   init(data: { isMultiplayer?: boolean; roomId?: string }) {
@@ -16,84 +21,65 @@ export class CharacterSelectScene extends Phaser.Scene {
     this.roomId = data.roomId;
   }
 
-  create() {
+  protected createMenu() {
     const { width, height } = this.cameras.main;
 
     // Title
     const titleText = this.isMultiplayer ? 'SELECT CHARACTERS' : 'SELECT CHARACTER';
-    this.add.text(width / 2, 80, titleText, {
-      fontSize: '48px',
-      fontFamily: 'Arial',
-      color: '#ffffff',
+    const title = this.add.text(width / 2, 60, titleText, {
+      fontSize: '56px',
+      fontFamily: this.theme.typography.titleFont,
+      color: `#${this.theme.colors.text.toString(16).padStart(6, '0')}`,
       stroke: '#000000',
-      strokeThickness: 4
-    }).setOrigin(0.5);
+      strokeThickness: this.theme.typography.titleStroke,
+      fontStyle: 'bold',
+    });
+    title.setOrigin(0.5).setDepth(1001);
 
     // Player indicator
-    const playerText = this.add.text(width / 2, 150, this.isMultiplayer ? `PLAYER ${this.currentPlayer + 1}` : 'PLAYER 1', {
-      fontSize: '32px',
-      fontFamily: 'Arial',
-      color: '#ffff00'
-    }).setOrigin(0.5);
+    this.playerText = this.add.text(
+      width / 2,
+      120,
+      this.isMultiplayer ? `PLAYER ${this.currentPlayer + 1}` : 'PLAYER 1',
+      {
+        fontSize: '32px',
+        fontFamily: this.theme.typography.itemFont,
+        color: `#${this.theme.colors.selected.toString(16).padStart(6, '0')}`,
+        fontStyle: 'bold',
+      }
+    );
+    this.playerText.setOrigin(0.5).setDepth(1001);
 
     // Character options
     const characters: CharacterType[] = ['axel', 'blaze', 'max', 'sammy'];
     const characterNames = ['AXEL', 'BLAZE', 'MAX', 'SAMMY'];
-    const startX = width / 2 - 300;
-    const y = height / 2;
+    const boxSpacing = 180;
+    const startX = width / 2 - ((characters.length - 1) * boxSpacing) / 2;
+    const y = height / 2 - 20;
 
     characters.forEach((char, index) => {
-      const x = startX + (index * 200);
-      
-      // Character box
-      const box = this.add.rectangle(x, y, 150, 200, 0x333333, 0.8);
-      box.setStrokeStyle(2, 0xffffff);
-      box.setInteractive({ useHandCursor: true });
-
-      // Character name
-      this.add.text(x, y - 60, characterNames[index], {
-        fontSize: '20px',
-        fontFamily: 'Arial',
-        color: '#ffffff'
-      }).setOrigin(0.5);
-
-      // Placeholder for character sprite
-      this.add.text(x, y, '?', {
-        fontSize: '64px',
-        fontFamily: 'Arial',
-        color: '#888888'
-      }).setOrigin(0.5);
-
-      // Selection handler
-      box.on('pointerdown', () => {
-        this.selectCharacter(char);
-      });
-
-      box.on('pointerover', () => {
-        box.setStrokeStyle(2, 0xffff00);
-      });
-
-      box.on('pointerout', () => {
-        box.setStrokeStyle(2, 0xffffff);
-      });
+      const x = startX + index * boxSpacing;
+      const box = new CharacterSelectBox(
+        this,
+        x,
+        y,
+        characterNames[index],
+        this.theme,
+        () => this.selectCharacter(char)
+      );
+      this.characterBoxes.push(box);
     });
 
     // Start game button (initially hidden)
-    const startButton = this.add.text(width / 2, height - 100, 'PRESS ENTER TO START', {
-      fontSize: '24px',
-      fontFamily: 'Arial',
-      color: '#00ff00',
-      stroke: '#000000',
-      strokeThickness: 2
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true }).setVisible(false);
-
-    startButton.on('pointerdown', () => {
-      this.startGame();
-    });
-
-    // Store references
-    this.data.set('playerText', playerText);
-    this.data.set('startButton', startButton);
+    this.startButton = new MenuButton(
+      this,
+      width / 2,
+      height - 80,
+      'PRESS ENTER TO START',
+      this.theme,
+      () => this.startGame()
+    );
+    this.startButton.setVisible(false);
 
     // Keyboard input
     this.input.keyboard?.on('keydown-ENTER', () => {
@@ -107,9 +93,14 @@ export class CharacterSelectScene extends Phaser.Scene {
     console.log(`CharacterSelectScene: Player ${this.currentPlayer + 1} selected ${character}`);
     this.selectedCharacters[this.currentPlayer] = character;
 
+    // Update visual selection
+    this.characterBoxes.forEach((box, index) => {
+      const char = ['axel', 'blaze', 'max', 'sammy'][index];
+      box.setSelected(char === character);
+    });
+
     // For single player, start game immediately after selection
     if (!this.isMultiplayer && this.currentPlayer === 0) {
-      // Single player mode - start game with just player 1
       this.startGame();
       return;
     }
@@ -117,14 +108,14 @@ export class CharacterSelectScene extends Phaser.Scene {
     // For multiplayer, move to next player or show start button
     if (this.currentPlayer === 0) {
       this.currentPlayer = 1;
-      const playerText = this.data.get('playerText') as Phaser.GameObjects.Text;
-      if (playerText) {
-        playerText.setText('PLAYER 2');
+      if (this.playerText) {
+        this.playerText.setText('PLAYER 2');
       }
+      // Clear selection for next player
+      this.characterBoxes.forEach((box) => box.setSelected(false));
     } else {
-      const startButton = this.data.get('startButton') as Phaser.GameObjects.Text;
-      if (startButton) {
-        startButton.setVisible(true);
+      if (this.startButton) {
+        this.startButton.setVisible(true);
       }
     }
   }
@@ -144,22 +135,28 @@ export class CharacterSelectScene extends Phaser.Scene {
 
   startGame() {
     console.log('CharacterSelectScene: Starting game with characters:', this.selectedCharacters);
-    
+
     if (!this.canStartGame()) {
       console.error('CharacterSelectScene: Cannot start - required characters not selected!');
       return;
     }
-    
-    // For single player, player 2 is optional (can be null)
+
     const player1Character = this.selectedCharacters[0]!;
     const player2Character = this.isMultiplayer ? this.selectedCharacters[1]! : null;
-    
+
     this.scene.start('GameScene', {
       player1Character: player1Character,
       player2Character: player2Character,
       isMultiplayer: this.isMultiplayer,
-      roomId: this.roomId
+      roomId: this.roomId,
     });
+  }
+
+  shutdown() {
+    this.characterBoxes.forEach((box) => box.destroy());
+    if (this.startButton) {
+      this.startButton.destroy();
+    }
   }
 }
 

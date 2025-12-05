@@ -1,114 +1,50 @@
-import Phaser from 'phaser';
-import { AudioManager } from '../../systems/audio/AudioManager';
-import { MusicContext } from '../../systems/audio/MusicState';
+import { BaseMenuScene } from '../../ui/menu/BaseMenuScene';
+import { MenuContainer } from '../../ui/menu/MenuContainer';
 
-export class MainMenuScene extends Phaser.Scene {
-  private menuItems: Phaser.GameObjects.Text[] = [];
-  private selectedIndex: number = 0;
-  private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
-  private audioManager!: AudioManager;
+export class MainMenuScene extends BaseMenuScene {
 
   constructor() {
-    super({ key: 'MainMenuScene' });
+    super('MainMenuScene');
   }
 
   create() {
-    const { width, height } = this.cameras.main;
-    
-    // Initialize audio manager
-    this.audioManager = new AudioManager(this);
-    
-    // Play menu music (with small delay to ensure audio is ready)
-    this.time.delayedCall(100, () => {
-      this.audioManager.playMusicWithContext('menu', MusicContext.MENU, true);
-    });
-
-    // Title
-    this.add.text(width / 2, height / 4, 'STREET MELEE', {
-      fontSize: '72px',
-      fontFamily: 'Arial',
-      color: '#ffffff',
-      stroke: '#000000',
-      strokeThickness: 6,
-      fontStyle: 'bold'
-    }).setOrigin(0.5);
-
-    this.add.text(width / 2, height / 4 + 90, 'A Streets of Rage Clone', {
-      fontSize: '24px',
-      fontFamily: 'Arial',
-      color: '#cccccc'
-    }).setOrigin(0.5);
-
-    // Menu options
-    const menuOptions = [
-      { text: 'SINGLE PLAYER', action: () => this.startSinglePlayer() },
-      { text: 'MULTIPLAYER', action: () => this.startMultiplayer() },
-      { text: 'SETTINGS', action: () => this.openSettings() },
-      { text: 'CONTROLS', action: () => this.showControls() },
-      { text: 'QUIT', action: () => this.quit() }
-    ];
-
-    const startY = height / 2 + 50;
-    const spacing = 60;
-
-    menuOptions.forEach((option, index) => {
-      const menuItem = this.add.text(width / 2, startY + (index * spacing), option.text, {
-        fontSize: '36px',
-        fontFamily: 'Arial',
-        color: index === 0 ? '#ffff00' : '#ffffff',
-        stroke: '#000000',
-        strokeThickness: 2
-      }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-
-      menuItem.on('pointerdown', () => {
-        this.audioManager.playSound('menuSelect');
-        option.action();
-      });
-      menuItem.on('pointerover', () => {
-        this.audioManager.playSound('menuSelect', 0.5);
-        this.selectMenuItem(index);
-      });
-
-      this.menuItems.push(menuItem);
-    });
-
-    // Keyboard navigation
-    this.cursors = this.input.keyboard?.createCursorKeys();
-    this.input.keyboard?.on('keydown-ENTER', () => {
-      this.audioManager.playSound('menuSelect');
-      menuOptions[this.selectedIndex].action();
-    });
-
-    // Instructions
-    this.add.text(width / 2, height - 50, 'Arrow Keys: Navigate | Enter: Select', {
-      fontSize: '16px',
-      color: '#888888'
-    }).setOrigin(0.5);
+    super.create();
   }
 
   update() {
-    if (!this.cursors) return;
-
-    if (Phaser.Input.Keyboard.JustDown(this.cursors.up!)) {
-      this.selectedIndex = (this.selectedIndex - 1 + this.menuItems.length) % this.menuItems.length;
-      this.updateSelection();
-    } else if (Phaser.Input.Keyboard.JustDown(this.cursors.down!)) {
-      this.selectedIndex = (this.selectedIndex + 1) % this.menuItems.length;
-      this.updateSelection();
+    super.update();
+    if (this.menuContainer) {
+      this.menuContainer.update();
     }
   }
 
-  private updateSelection() {
-    this.menuItems.forEach((item, index) => {
-      if (item && item.active) {
-        item.setStyle({ color: index === this.selectedIndex ? '#ffff00' : '#ffffff' });
-      }
-    });
-  }
+  protected createMenu() {
+    const { width, height } = this.cameras.main;
 
-  private selectMenuItem(index: number) {
-    this.selectedIndex = index;
-    this.updateSelection();
+    // Create menu container - positioned higher to leave room for instructions
+    this.menuContainer = new MenuContainer(
+      this,
+      width / 2,
+      height / 5, // Moved up from height/4 to leave more room
+      'STREET MELEE',
+      this.theme,
+      'A Streets of Rage Clone',
+      this.audioManager
+    );
+
+    // Add menu buttons
+    this.menuContainer.addButton('SINGLE PLAYER', () => this.startSinglePlayer());
+    this.menuContainer.addButton('MULTIPLAYER', () => this.startMultiplayer());
+    this.menuContainer.addButton('SETTINGS', () => this.openSettings());
+    this.menuContainer.addButton('CONTROLS', () => this.showControls());
+    this.menuContainer.addButton('QUIT', () => this.quit());
+
+    // Instructions - positioned at the very bottom with more margin
+    this.add.text(width / 2, height - 30, 'Arrow Keys: Navigate | Enter: Select', {
+      fontSize: '14px',
+      fontFamily: this.theme.typography.labelFont,
+      color: `#${this.theme.colors.textSecondary.toString(16).padStart(6, '0')}`,
+    }).setOrigin(0.5).setDepth(1001);
   }
 
   private startSinglePlayer() {
@@ -128,17 +64,10 @@ export class MainMenuScene extends Phaser.Scene {
   }
 
   private quit() {
-    // In Electron, this would quit the app
-    // In browser, just show message
-    this.audioManager.stopMusic(true);
-    alert('Thanks for playing!');
-  }
-
-  shutdown() {
-    // Stop music when leaving menu
     if (this.audioManager) {
       this.audioManager.stopMusic(true);
     }
+    alert('Thanks for playing!');
   }
 }
 
