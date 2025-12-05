@@ -12,10 +12,10 @@ import { SpecialMoveSystem } from '../../systems/combat/SpecialMoveSystem';
 import { HealthBar } from '../../ui/HealthBar';
 import { ComboCounter } from '../../ui/ComboCounter';
 import { WeaponIndicator } from '../../ui/WeaponIndicator';
-import { WaveNotification } from '../../ui/WaveNotification';
 import { BaseEntity } from '../../entities/base/BaseEntity';
 import { Hitbox } from '../../systems/combat/Hitbox';
 import { Enemy } from '../../entities/enemies/Enemy';
+import { Boss } from '../../entities/bosses/Boss';
 import { WeaponManager } from '../../systems/weapon/WeaponManager';
 import { ItemManager } from '../../systems/item/ItemManager';
 import { GrabSystem } from '../../systems/combat/GrabSystem';
@@ -27,10 +27,12 @@ import { VisualEffects } from '../../systems/effects/VisualEffects';
 import { AudioManager } from '../../systems/audio/AudioManager';
 import { MusicContext } from '../../systems/audio/MusicState';
 import { MultiplayerClient } from '../../multiplayer/Client';
+import { BossHealthBar } from '../../ui/BossHealthBar';
 
 export class GameScene extends Phaser.Scene {
   private players: Player[] = [];
   private enemies: Enemy[] = [];
+  private bosses: Boss[] = [];
   private ground!: Phaser.GameObjects.Rectangle;
   private inputManager!: InputManager;
   private entityManager!: EntityManager;
@@ -50,7 +52,7 @@ export class GameScene extends Phaser.Scene {
   private healthBars: HealthBar[] = [];
   private comboCounters: ComboCounter[] = [];
   private weaponIndicators: WeaponIndicator[] = [];
-  private waveNotification?: WaveNotification;
+  private bossHealthBar?: BossHealthBar;
   private scoreText!: Phaser.GameObjects.Text;
   private livesText!: Phaser.GameObjects.Text;
   private playerShadows: Map<Player, Phaser.GameObjects.Ellipse> = new Map();
@@ -132,9 +134,11 @@ export class GameScene extends Phaser.Scene {
     // Initialize room system (loads first room and backgrounds)
     this.roomManager.initializeLevel('level1');
     
-    // Set physics world bounds to match room width (important for movement)
+    // Set physics world bounds to match room width and height (important for movement)
     const roomWidth = this.roomManager.getRoomWidth();
-    this.physics.world.setBounds(0, 0, roomWidth, height);
+    const roomHeight = this.roomManager.getRoomHeight() || height;
+    // Allow vertical movement: Y from 0 (top/background) to roomHeight (bottom/foreground)
+    this.physics.world.setBounds(0, 0, roomWidth, roomHeight);
 
     // Create ground (extend to room width)
     this.createGround(roomWidth, height);
@@ -160,8 +164,8 @@ export class GameScene extends Phaser.Scene {
     // Create UI
     this.createUI();
 
-    // Create wave notification
-    this.waveNotification = new WaveNotification(this, width / 2, height / 3);
+    // Initialize boss health bar (hidden until boss spawns)
+    this.bossHealthBar = new BossHealthBar(this);
 
     // Debug text
     this.add.text(10, 10, `Level ${this.levelManager.getCurrentLevel()} - Full Combat System`, {
@@ -195,9 +199,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createGround(width: number, height: number) {
-    this.ground = this.add.rectangle(width / 2, height - 50, width, 100, 0x444444);
+    // Create ground as a range: bottom of frame up to +200px
+    // This allows players to move vertically within the ground range at different depth levels
+    const groundHeight = 200; // 200px range from bottom
+    const groundY = height - (groundHeight / 2); // Center of ground range
+    this.ground = this.add.rectangle(width / 2, groundY, width, groundHeight, 0x444444);
     this.physics.add.existing(this.ground, true);
-    (this.ground.body as Phaser.Physics.Arcade.Body).setSize(width, 100);
+    (this.ground.body as Phaser.Physics.Arcade.Body).setSize(width, groundHeight);
   }
 
   private createPlayers(_width: number, height: number) {
@@ -221,6 +229,8 @@ export class GameScene extends Phaser.Scene {
     player1.sprite.setData('isPlayer', true);
     player1.sprite.setData('playerEntity', player1);
     player1.sprite.setData('entity', player1);
+    // Set depth based on Y position for proper layering
+    player1.sprite.setDepth(player1.sprite.y);
 
     // Only create player 2 if in multiplayer mode or if player2Character is provided
     if (isMultiplayer || player2Char) {
@@ -237,6 +247,8 @@ export class GameScene extends Phaser.Scene {
       player2.sprite.setData('isPlayer', true);
       player2.sprite.setData('playerEntity', player2);
       player2.sprite.setData('entity', player2);
+      // Set depth based on Y position for proper layering
+      player2.sprite.setDepth(player2.sprite.y);
     }
   }
 
@@ -260,7 +272,7 @@ export class GameScene extends Phaser.Scene {
     // Room manager events
     this.events.on('roomLoaded', (data: { roomId: string; roomName: string; width: number; height: number }) => {
       console.log(`[GameScene] Room loaded: ${data.roomName} (${data.roomId})`);
-      // Update physics world bounds for new room
+      // Update physics world bounds for new room (including vertical bounds for depth navigation)
       this.physics.world.setBounds(0, 0, data.width, data.height);
     });
 
@@ -284,7 +296,29 @@ export class GameScene extends Phaser.Scene {
       this.entityManager.add(enemy);
       enemy.sprite.setData('entity', enemy);
       enemy.sprite.setData('isEnemy', true);
+      // Set depth based on Y position for proper layering
+      enemy.sprite.setDepth(enemy.sprite.y);
       this.physics.add.collider(enemy.sprite, this.ground);
+    });
+
+    // Listen for boss spawns
+    this.events.on('bossSpawned', (boss: Boss) => {
+      this.bosses.push(boss);
+      this.entityManager.add(boss);
+      boss.sprite.setData('entity', boss);
+      boss.sprite.setData('isBoss', true);
+      
+      // Set depth for proper rendering (same layer as players/enemies)
+      // Use Y position for depth sorting so lower entities appear in front
+      boss.sprite.setDepth(boss.sprite.y);
+      
+      this.physics.add.collider(boss.sprite, this.ground);
+      
+      // Show boss health bar
+      if (!this.bossHealthBar) {
+        this.bossHealthBar = new BossHealthBar(this);
+      }
+      this.bossHealthBar.setBoss(boss);
     });
 
     // Listen for enemy defeats
@@ -296,6 +330,28 @@ export class GameScene extends Phaser.Scene {
           this.levelManager.onEnemyDefeated(enemyId, waveNumber);
         }
       }
+    });
+
+    // Listen for boss defeat
+    this.events.on('bossDefeated', (data: { boss: Boss; bossType: string }) => {
+      console.log(`[GameScene] Boss defeated: ${data.bossType}`);
+      
+      // Remove boss from array
+      const index = this.bosses.indexOf(data.boss);
+      if (index > -1) {
+        this.bosses.splice(index, 1);
+      }
+      
+      // Hide boss health bar
+      if (this.bossHealthBar) {
+        this.bossHealthBar.clearBoss();
+      }
+      
+      // Trigger level completion (boss defeat = level complete)
+      this.events.emit('levelCompleted', {
+        levelId: `level${this.levelManager.getCurrentLevel()}`,
+        score: 0 // TODO: Calculate actual score
+      });
     });
 
     this.events.on('weaponSpawned', (weapon: Weapon) => {
@@ -314,9 +370,6 @@ export class GameScene extends Phaser.Scene {
     this.events.on('waveStarted', (wave: any) => {
       const waveNumber = wave.waveNumber || wave;
       console.log(`Wave ${waveNumber} started!`);
-      if (this.waveNotification) {
-        this.waveNotification.showWave(waveNumber);
-      }
     });
 
     this.events.on('waveCompleted', (waveNumber: number) => {
@@ -327,9 +380,6 @@ export class GameScene extends Phaser.Scene {
     // Checkpoint events
     this.events.on('checkpointActivated', (checkpoint: any) => {
       console.log(`Checkpoint ${checkpoint.id} activated at (${checkpoint.x}, ${checkpoint.y})`);
-      if (this.waveNotification) {
-        this.waveNotification.showCheckpoint(checkpoint.id);
-      }
       // Could add save state functionality here
     });
 
@@ -356,11 +406,6 @@ export class GameScene extends Phaser.Scene {
       if (this.audioManager) {
         this.audioManager.playMusicWithContext('level1', MusicContext.GAMEPLAY, true);
       }
-      
-      // Show level notification
-      if (this.waveNotification) {
-        this.waveNotification.showLevel(levelInfo.levelNumber, levelInfo.levelName);
-      }
     });
 
     // Level end reached
@@ -372,10 +417,14 @@ export class GameScene extends Phaser.Scene {
 
   // Removed createEnemies - enemies are now spawned by LevelManager via spawn points and waves
 
+  private playerGroundColliders: Map<Player, Phaser.Physics.Arcade.Collider> = new Map();
+
   private setupCollisions() {
     // Set up collisions between players and ground
+    // Store colliders so we can enable/disable them for depth navigation
     this.players.forEach(player => {
-      this.physics.add.collider(player.sprite, this.ground);
+      const collider = this.physics.add.collider(player.sprite, this.ground);
+      this.playerGroundColliders.set(player, collider);
     });
 
     // Set up collisions between enemies and ground
@@ -844,6 +893,45 @@ export class GameScene extends Phaser.Scene {
         return;
       }
       const input = this.inputManager.getPlayerInput(index);
+      
+      // Handle ground collision for depth navigation
+      // Ground is now a 200px range from bottom, so players can be at different depths
+      // Disable ground collision when not at foreground level to prevent drift
+      const body = player.sprite.body as Phaser.Physics.Arcade.Body;
+      if (body) {
+        const roomHeight = this.roomManager?.getRoomHeight() || this.cameras.main.height;
+        const groundRangeTop = roomHeight - 200; // Top of ground range
+        const groundRangeBottom = roomHeight; // Bottom of frame
+        const isMovingVertically = input.up || input.down;
+        const isAtForeground = player.sprite.y >= groundRangeBottom - 10; // Within 10px of bottom
+        
+        // Enable/disable ground collision based on depth
+        const collider = this.playerGroundColliders.get(player);
+        if (collider) {
+          // Only enable ground collision at foreground level (bottom)
+          // This prevents collision forces from causing drift at depth levels
+          if (isAtForeground && !isMovingVertically) {
+            collider.active = true;
+          } else {
+            collider.active = false;
+          }
+        }
+        
+        // Always disable gravity and stop velocity when not moving vertically
+        // This ensures character stops at exact coordinate
+        if (!isMovingVertically) {
+          body.setGravityY(0);
+          body.setVelocityY(0);
+          
+          // Clamp to ground range if outside
+          if (player.sprite.y < groundRangeTop) {
+            player.sprite.setPosition(player.sprite.x, groundRangeTop);
+          } else if (player.sprite.y > groundRangeBottom) {
+            player.sprite.setPosition(player.sprite.x, groundRangeBottom);
+          }
+        }
+      }
+      
       player.handleInput(input);
       
       // Update weapon indicator
@@ -889,6 +977,70 @@ export class GameScene extends Phaser.Scene {
       this.entityManager.update();
     }
 
+    // Update player depths for proper layering
+    this.players.forEach(player => {
+      if (player && player.sprite && player.sprite.active) {
+        player.sprite.setDepth(player.sprite.y);
+      }
+    });
+
+    // CRITICAL: Enforce zero velocity/gravity for vertical movement AFTER physics step
+    // This must run after all physics updates to prevent drift
+    this.players.forEach(player => {
+      if (!player || !player.sprite || !player.sprite.active) {
+        return;
+      }
+      const body = player.sprite.body as Phaser.Physics.Arcade.Body;
+      if (!body) return;
+
+      const roomHeight = this.roomManager?.getRoomHeight() || this.cameras.main.height;
+      const groundRangeTop = roomHeight - 200;
+      const groundRangeBottom = roomHeight;
+      const isInGroundRange = player.sprite.y >= groundRangeTop && player.sprite.y <= groundRangeBottom;
+      
+      // Get current input to check if moving vertically
+      // Use index from players array instead of protected playerIndex
+      const playerIndex = this.players.indexOf(player);
+      const currentInput = playerIndex >= 0 ? this.inputManager.getPlayerInput(playerIndex) : { up: false, down: false };
+      const isMovingVertically = currentInput.up || currentInput.down;
+      
+      // If in ground range and not moving vertically, enforce zero velocity/gravity
+      // This runs AFTER physics step to prevent any drift
+      if (isInGroundRange && !isMovingVertically) {
+        const oldY = player.sprite.y;
+        const oldVelocityY = body.velocity.y;
+        const oldGravityY = body.gravity.y;
+        
+        // Force zero velocity and gravity IMMEDIATELY
+        body.setVelocityY(0);
+        body.setGravityY(0);
+        
+        // Also restore position if it has drifted significantly
+        // Store previous Y to detect drift
+        const storedY = (player as any).lastStableY;
+        if (storedY !== undefined && Math.abs(player.sprite.y - storedY) > 0.1) {
+          console.log(`[GameScene] Restoring position after physics drift: ${player.sprite.y.toFixed(2)} -> ${storedY.toFixed(2)}`);
+          player.sprite.setPosition(player.sprite.x, storedY);
+          // Force velocity to 0 again after position restore
+          body.setVelocityY(0);
+        } else {
+          // Store current Y as stable position (only if not drifting)
+          if (Math.abs(body.velocity.y) < 0.1 && Math.abs(body.gravity.y) < 0.1) {
+            (player as any).lastStableY = player.sprite.y;
+          }
+        }
+        
+        // Log if we detect any drift being corrected
+        const playerIndex = this.players.indexOf(player);
+        if (Math.abs(body.velocity.y - oldVelocityY) > 0.01 || Math.abs(body.gravity.y - oldGravityY) > 0.01 || Math.abs(player.sprite.y - oldY) > 0.1) {
+          console.log(`[GameScene] Correcting drift for Player ${playerIndex} - Y: ${oldY.toFixed(2)} -> ${player.sprite.y.toFixed(2)}, VelocityY: ${oldVelocityY.toFixed(2)} -> ${body.velocity.y.toFixed(2)}, GravityY: ${oldGravityY.toFixed(2)} -> ${body.gravity.y.toFixed(2)}`);
+        }
+      } else if (isMovingVertically) {
+        // Clear stored position when moving
+        (player as any).lastStableY = undefined;
+      }
+    });
+
     // Update weapon manager
     if (this.weaponManager) {
       this.weaponManager.update();
@@ -920,14 +1072,18 @@ export class GameScene extends Phaser.Scene {
         // Move player to new room position
         this.players[0].sprite.setPosition(transition.newX, transition.newY);
         
-        // Update physics world bounds for new room
+        // Update physics world bounds for new room (including vertical bounds)
         const newRoomWidth = this.roomManager.getRoomWidth();
-        this.physics.world.setBounds(0, 0, newRoomWidth, this.cameras.main.height);
+        const newRoomHeight = this.roomManager.getRoomHeight() || this.cameras.main.height;
+        this.physics.world.setBounds(0, 0, newRoomWidth, newRoomHeight);
         
-        // Update ground to match new room width
+        // Update ground to match new room width (keep 200px height range)
         if (this.ground) {
-          this.ground.setSize(newRoomWidth, 100);
-          (this.ground.body as Phaser.Physics.Arcade.Body).setSize(newRoomWidth, 100);
+          const groundHeight = 200;
+          const groundY = newRoomHeight - (groundHeight / 2);
+          this.ground.setSize(newRoomWidth, groundHeight);
+          this.ground.setPosition(newRoomWidth / 2, groundY);
+          (this.ground.body as Phaser.Physics.Arcade.Body).setSize(newRoomWidth, groundHeight);
         }
       }
     }
@@ -952,6 +1108,8 @@ export class GameScene extends Phaser.Scene {
         if (enemy && enemy.sprite && enemy.sprite.active) {
           try {
             enemy.update();
+            // Update depth based on Y position for proper layering
+            enemy.sprite.setDepth(enemy.sprite.y);
           } catch (error) {
             console.warn('[GameScene] Error updating enemy:', error);
             return false; // Remove enemy if update fails
@@ -970,6 +1128,27 @@ export class GameScene extends Phaser.Scene {
           bar.update();
         }
       });
+    }
+
+    // Update bosses
+    if (this.bosses) {
+      this.bosses = this.bosses.filter(boss => {
+        if (boss && boss.sprite && boss.sprite.active) {
+          try {
+            boss.update();
+          } catch (error) {
+            console.warn('[GameScene] Error updating boss:', error);
+            return false;
+          }
+          return true;
+        }
+        return false;
+      });
+    }
+
+    // Update boss health bar
+    if (this.bossHealthBar) {
+      this.bossHealthBar.update();
     }
 
     // Update shadows
@@ -1039,11 +1218,6 @@ export class GameScene extends Phaser.Scene {
         this.audioManager.playSound('levelAdvance');
       }
       
-      // Show level complete notification
-      if (this.waveNotification) {
-        this.waveNotification.showLevelComplete(this.levelManager.getCurrentLevel());
-      }
-      
       // Wait a moment before transitioning
       this.time.delayedCall(2000, () => {
         // Clean up current level entities
@@ -1054,13 +1228,17 @@ export class GameScene extends Phaser.Scene {
         
         // Update ground size for new level
         const newLevelWidth = this.levelManager.getLevelWidth();
+        const newLevelHeight = this.cameras.main.height;
         if (this.ground) {
-          this.ground.setSize(newLevelWidth, 100);
-          (this.ground.body as Phaser.Physics.Arcade.Body).setSize(newLevelWidth, 100);
+          const groundHeight = 200;
+          const groundY = newLevelHeight - (groundHeight / 2);
+          this.ground.setSize(newLevelWidth, groundHeight);
+          this.ground.setPosition(newLevelWidth / 2, groundY);
+          (this.ground.body as Phaser.Physics.Arcade.Body).setSize(newLevelWidth, groundHeight);
         }
         
         // Update physics world bounds
-        this.physics.world.setBounds(0, 0, newLevelWidth, this.cameras.main.height);
+        this.physics.world.setBounds(0, 0, newLevelWidth, newLevelHeight);
       });
     } else {
       // All levels complete - victory!

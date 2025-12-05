@@ -15,6 +15,7 @@ export const GameConfig = {
   // Player
   PLAYER_BASE_SPEED: 150,
   PLAYER_BASE_JUMP: 400,
+  PLAYER_VERTICAL_SPEED: 120, // Speed for up/down depth navigation
   PLAYER_MAX_HEALTH: 100,
   PLAYER_WIDTH: 32,
   PLAYER_HEIGHT: 48,

@@ -74,6 +74,9 @@ export class AnimationSystem {
     // Try to play the animation
     if (animKey && this.scene.anims.exists(animKey)) {
       try {
+        // When using directional animations (left/right), don't flip the sprite
+        // The animation key already handles direction
+        sprite.setFlipX(false);
         sprite.play(animKey, true);
         // Ensure pixel-perfect rendering
         this.ensurePixelPerfectRendering(sprite);
@@ -85,6 +88,8 @@ export class AnimationSystem {
       // Animation doesn't exist, try to use a texture directly
       const textureKey = `${characterType}_idle_${direction}`;
       if (this.scene.textures.exists(textureKey)) {
+        // When using directional textures, don't flip - use the correct texture
+        sprite.setFlipX(false);
         sprite.setTexture(textureKey);
         this.ensurePixelPerfectRendering(sprite);
       } else {

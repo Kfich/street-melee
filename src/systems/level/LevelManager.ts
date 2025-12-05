@@ -2,14 +2,16 @@ import Phaser from 'phaser';
 import { Enemy, EnemyType } from '../../entities/enemies/Enemy';
 import { Weapon, WeaponType } from '../../entities/weapons/Weapon';
 import { Item, ItemType } from '../../entities/items/Item';
+import { Boss, BossType } from '../../entities/bosses/Boss';
 
 export interface SpawnPoint {
   x: number;
   y: number;
-  type: 'enemy' | 'weapon' | 'item';
+  type: 'enemy' | 'weapon' | 'item' | 'boss';
   enemyType?: EnemyType;
   weaponType?: WeaponType;
   itemType?: ItemType;
+  bossType?: BossType;
   delay?: number; // Spawn delay in ms
   active: boolean;
   wave?: number; // Wave number for wave-based spawning
@@ -182,6 +184,19 @@ export class LevelManager {
             spawnPoint.itemType
           );
           this.scene.events.emit('itemSpawned', item);
+        }
+        break;
+      case 'boss':
+        if (spawnPoint.bossType) {
+          const boss = new Boss(
+            this.scene,
+            spawnPoint.x,
+            spawnPoint.y,
+            spawnPoint.bossType
+          );
+          boss.sprite.setData('entity', boss);
+          boss.sprite.setData('isBoss', true);
+          this.scene.events.emit('bossSpawned', boss);
         }
         break;
     }
@@ -530,6 +545,9 @@ export const LEVEL_CONFIGS: LevelData[] = [
       // Items (floating above ground)
       { x: 300, y: 420, type: 'item', itemType: 'apple', active: true },
       { x: 700, y: 420, type: 'item', itemType: 'moneyBag', active: true },
+      
+      // Boss spawn at the end (after all waves)
+      { x: 2800, y: 476, type: 'boss', bossType: 'blizz', active: true, delay: 0 }
     ],
     waves: [
       {

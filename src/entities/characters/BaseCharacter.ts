@@ -32,6 +32,8 @@ export abstract class BaseCharacter extends BaseEntity {
   protected currentWeapon: Weapon | null = null;
   protected lastDropTime: number = 0;
   protected dropCooldown: number = 300; // Prevent accidental double drops
+  private lastVerticalInput: { up: boolean; down: boolean } = { up: false, down: false };
+  private targetYPosition: number | null = null; // Store target Y position to prevent drift
   protected grabSystem?: GrabSystem;
   protected grabbedTarget: BaseEntity | null = null;
   protected wasInAir: boolean = false; // Track if character was in air last frame
@@ -274,8 +276,130 @@ export abstract class BaseCharacter extends BaseEntity {
       }
     }
 
-    // Jump
-    if (input.jump && this.isGrounded && this.state !== 'jumping') {
+    // Vertical movement (depth navigation) - separate from jump
+    // Up moves backward (decreases Y), Down moves forward (increases Y)
+    // Bottom of screen is foreground (highest Y), top is background (lowest Y)
+    // Use direct position updates for smooth depth navigation without physics interference
+    const verticalSpeed = GameConfig.PLAYER_VERTICAL_SPEED * (1 + this.stats.speed * GameConfig.SPEED_MULTIPLIER);
+    const deltaTime = this.scene.game.loop.delta;
+    const verticalDelta = (verticalSpeed * deltaTime) / 1000; // Convert to pixels per frame
+    
+    // Get room dimensions and ground range
+    const roomHeight = (this.scene as any).roomManager?.getRoomHeight() || this.scene.cameras.main.height;
+    const groundRangeTop = roomHeight - 200; // Top of ground range (200px from bottom) - UPPER CAP
+    const groundRangeBottom = roomHeight; // Bottom of frame
+    
+    // Track vertical input state changes for debugging
+    const currentVerticalInput = { up: input.up && !input.jump, down: input.down && !input.jump };
+    const verticalInputChanged = 
+      currentVerticalInput.up !== this.lastVerticalInput.up || 
+      currentVerticalInput.down !== this.lastVerticalInput.down;
+    
+    // Log when vertical input is pressed
+    if (verticalInputChanged) {
+      if (currentVerticalInput.up && !this.lastVerticalInput.up) {
+        console.log(`[Player ${this.playerIndex}] UP PRESSED - Y: ${this.sprite.y.toFixed(2)}, VelocityY: ${body?.velocity.y.toFixed(2)}, GravityY: ${body?.gravity.y}`);
+      }
+      if (currentVerticalInput.down && !this.lastVerticalInput.down) {
+        console.log(`[Player ${this.playerIndex}] DOWN PRESSED - Y: ${this.sprite.y.toFixed(2)}, VelocityY: ${body?.velocity.y.toFixed(2)}, GravityY: ${body?.gravity.y}`);
+      }
+      if (!currentVerticalInput.up && this.lastVerticalInput.up) {
+        console.log(`[Player ${this.playerIndex}] UP RELEASED - Y: ${this.sprite.y.toFixed(2)}, VelocityY: ${body?.velocity.y.toFixed(2)}, GravityY: ${body?.gravity.y}`);
+      }
+      if (!currentVerticalInput.down && this.lastVerticalInput.down) {
+        console.log(`[Player ${this.playerIndex}] DOWN RELEASED - Y: ${this.sprite.y.toFixed(2)}, VelocityY: ${body?.velocity.y.toFixed(2)}, GravityY: ${body?.gravity.y}`);
+      }
+      this.lastVerticalInput = { ...currentVerticalInput };
+    }
+    
+    // Track if we're manually controlling vertical movement
+    let isManuallyMovingVertical = false;
+    
+    if (input.up && !input.jump) {
+      // Move up (backward in depth) - use direct position update
+      // Cap at groundRangeTop (cannot move above ground range)
+      if (this.sprite.active) {
+        const oldY = this.sprite.y;
+        const newY = Math.max(groundRangeTop, this.sprite.y - verticalDelta); // Clamp to top of ground range
+        this.sprite.setPosition(this.sprite.x, newY);
+        // Disable gravity and stop vertical velocity immediately
+        if (body) {
+          body.setVelocityY(0);
+          body.setGravityY(0);
+        }
+        isManuallyMovingVertical = true;
+        // Log position change if significant
+        if (Math.abs(newY - oldY) > 0.1) {
+          console.log(`[Player ${this.playerIndex}] Moving UP: ${oldY.toFixed(2)} -> ${newY.toFixed(2)}`);
+        }
+      }
+    } else if (input.down && !input.jump) {
+      // Move down (forward in depth) - use direct position update
+      if (this.sprite.active) {
+        const oldY = this.sprite.y;
+        const newY = Math.min(groundRangeBottom, this.sprite.y + verticalDelta); // Clamp to bottom of frame
+        this.sprite.setPosition(this.sprite.x, newY);
+        // Disable gravity and stop vertical velocity immediately
+        if (body) {
+          body.setVelocityY(0);
+          body.setGravityY(0);
+        }
+        isManuallyMovingVertical = true;
+        // Log position change if significant
+        if (Math.abs(newY - oldY) > 0.1) {
+          console.log(`[Player ${this.playerIndex}] Moving DOWN: ${oldY.toFixed(2)} -> ${newY.toFixed(2)}`);
+        }
+      }
+    }
+    
+    // When not manually moving vertically, ensure character stops at exact coordinate
+    // Store the target Y position to prevent drift
+    if (!isManuallyMovingVertical && body) {
+      const oldY = this.sprite.y;
+      const oldVelocityY = body.velocity.y;
+      const oldGravityY = body.gravity.y;
+      
+      // Store target Y position when input stops (first frame after release)
+      if (this.targetYPosition === null) {
+        this.targetYPosition = this.sprite.y;
+      }
+      
+      // Always disable gravity and stop velocity when not moving vertically
+      // This prevents any floating or falling
+      body.setGravityY(0);
+      body.setVelocityY(0);
+      
+      // Restore to target position if it has drifted
+      if (this.targetYPosition !== null && Math.abs(this.sprite.y - this.targetYPosition) > 0.1) {
+        console.log(`[Player ${this.playerIndex}] Restoring position from drift: ${this.sprite.y.toFixed(2)} -> ${this.targetYPosition.toFixed(2)}`);
+        this.sprite.setPosition(this.sprite.x, this.targetYPosition);
+      }
+      
+      // Clamp position to ground range if outside
+      if (this.sprite.y < groundRangeTop) {
+        // Above ground range - clamp to top of ground range
+        this.sprite.setPosition(this.sprite.x, groundRangeTop);
+        this.targetYPosition = groundRangeTop;
+        console.log(`[Player ${this.playerIndex}] Clamped ABOVE range: ${oldY.toFixed(2)} -> ${groundRangeTop.toFixed(2)}`);
+      } else if (this.sprite.y > groundRangeBottom) {
+        // Below ground range - clamp to bottom
+        this.sprite.setPosition(this.sprite.x, groundRangeBottom);
+        this.targetYPosition = groundRangeBottom;
+        console.log(`[Player ${this.playerIndex}] Clamped BELOW range: ${oldY.toFixed(2)} -> ${groundRangeBottom.toFixed(2)}`);
+      }
+      
+      // Log if position or physics changed unexpectedly (drift detection)
+      if (Math.abs(this.sprite.y - oldY) > 0.01 || Math.abs(body.velocity.y - oldVelocityY) > 0.01 || Math.abs(body.gravity.y - oldGravityY) > 0.01) {
+        console.log(`[Player ${this.playerIndex}] DRIFT DETECTED in handleInput - Y: ${oldY.toFixed(2)} -> ${this.sprite.y.toFixed(2)}, VelocityY: ${oldVelocityY.toFixed(2)} -> ${body.velocity.y.toFixed(2)}, GravityY: ${oldGravityY.toFixed(2)} -> ${body.gravity.y.toFixed(2)}`);
+      }
+    } else if (isManuallyMovingVertical) {
+      // Clear target position when moving manually
+      this.targetYPosition = null;
+    }
+
+    // Jump (works independently, but vertical movement takes priority when both are pressed)
+    // If player is pressing up/down, they're controlling depth, so don't jump
+    if (input.jump && !input.up && !input.down && this.isGrounded && this.state !== 'jumping') {
       const jumpPower = GameConfig.PLAYER_BASE_JUMP * (1 + this.stats.jump * GameConfig.JUMP_MULTIPLIER);
       if (this.sprite.active && body) {
         body.setVelocityY(-jumpPower);
@@ -467,6 +591,8 @@ export abstract class BaseCharacter extends BaseEntity {
         this.animationSystem.playAnimation(this.sprite, this.state, this.facingRight, this.characterType);
       } else {
         // Play special animation directly
+        // When using directional animations, don't flip - animation key handles direction
+        this.sprite.setFlipX(false);
         this.sprite.play(animKey, true);
         // Ensure pixel-perfect rendering
         if (this.scene.textures.exists(this.sprite.texture.key)) {

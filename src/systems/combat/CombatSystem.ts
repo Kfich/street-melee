@@ -70,12 +70,13 @@ export class CombatSystem {
 
     target.takeDamage(damageInfo.amount);
     
-    // Emit combo hit event if this is a player hitting an enemy
+    // Emit combo hit event if this is a player hitting an enemy or boss
     const playerIndex = hitbox.owner.getData('playerIndex');
     if (playerIndex !== undefined && playerIndex >= 0) {
-      // Check if target is an enemy (not a player)
+      // Check if target is an enemy or boss (not a player)
       const isEnemy = target.sprite.getData('isEnemy');
-      if (isEnemy) {
+      const isBoss = target.sprite.getData('isBoss');
+      if (isEnemy || isBoss) {
         this.scene.events.emit('comboHit', playerIndex);
       }
     }

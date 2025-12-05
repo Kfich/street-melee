@@ -92,10 +92,14 @@ export abstract class BaseEntity {
 
   /**
    * Set facing direction
+   * Note: When using directional animations (left/right), the animation system
+   * handles direction via animation keys, so we don't flip the sprite here.
+   * This method is kept for compatibility but flipX is handled by animation system.
    */
   setFacingRight(facingRight: boolean) {
     this.facingRight = facingRight;
-    this.sprite.setFlipX(!facingRight);
+    // Don't flip sprite here - directional animations handle direction via keys
+    // The animation system will set flipX to false and use correct animation key
   }
 
   /**

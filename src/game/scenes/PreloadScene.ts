@@ -36,6 +36,9 @@ export class PreloadScene extends Phaser.Scene {
     // Load enemy sprites
     this.loadEnemySprites();
 
+    // Load boss sprites
+    this.loadBossSprites();
+
     // Load item sprites
     this.loadItemSprites();
 
@@ -233,6 +236,73 @@ export class PreloadScene extends Phaser.Scene {
     
     // Use PC21 for attack
     this.load.image('enemy_donovan_attack_1', 'assets/sprites/imgs/prison-civi/PC21.gif');
+  }
+
+  /**
+   * Load boss sprites
+   */
+  private loadBossSprites(): void {
+    // Load Blizz sprites (attacking boss)
+    this.load.image('blizz_idle_left', 'assets/sprites/imgs/Blizz/BL1.gif');
+    this.load.image('blizz_walk_left_1', 'assets/sprites/imgs/Blizz/BL1.gif');
+    this.load.image('blizz_walk_left_2', 'assets/sprites/imgs/Blizz/BL2.gif');
+    this.load.image('blizz_walk_left_3', 'assets/sprites/imgs/Blizz/BL3.gif');
+    this.load.image('blizz_attack_left', 'assets/sprites/imgs/Blizz/BLA.gif');
+    
+    this.load.image('blizz_idle_right', 'assets/sprites/imgs/Blizz/BR1.gif');
+    this.load.image('blizz_walk_right_1', 'assets/sprites/imgs/Blizz/BR1.gif');
+    this.load.image('blizz_walk_right_2', 'assets/sprites/imgs/Blizz/BR2.gif');
+    this.load.image('blizz_walk_right_3', 'assets/sprites/imgs/Blizz/BR3.gif');
+    this.load.image('blizz_attack_right', 'assets/sprites/imgs/Blizz/BRA.gif');
+
+    // Load Benny sprites (attacking boss)
+    this.load.image('benny_idle_left', 'assets/sprites/imgs/Benny/BenL.gif');
+    this.load.image('benny_idle_right', 'assets/sprites/imgs/Benny/BenR.gif');
+    this.load.image('benny_walk_left', 'assets/sprites/imgs/Benny/BenL.gif');
+    this.load.image('benny_walk_right', 'assets/sprites/imgs/Benny/BenR.gif');
+    this.load.image('benny_attack_left', 'assets/sprites/imgs/Benny/BenL.gif'); // Using same sprite for now
+    this.load.image('benny_attack_right', 'assets/sprites/imgs/Benny/BenR.gif');
+
+    // Load Principal sprites (non-attacking boss)
+    this.load.image('principle_idle_left', 'assets/sprites/imgs/principle/principle-left.gif');
+    this.load.image('principle_action_left', 'assets/sprites/imgs/principle/principle-left-action.gif');
+    // Principal only faces left in sprites
+    this.load.image('principle_idle_right', 'assets/sprites/imgs/principle/principle-left.gif'); // Flip for right
+    this.load.image('principle_action_right', 'assets/sprites/imgs/principle/principle-left-action.gif');
+
+    // Load Midnight (Professor Midnight Johnson) sprites (attacking boss)
+    this.load.image('midnight_idle_left', 'assets/sprites/imgs/midnight/midnight-left.gif');
+    this.load.image('midnight_point_left', 'assets/sprites/imgs/midnight/midnight-point-left.gif');
+    this.load.image('midnight_attack_left', 'assets/sprites/imgs/midnight/midnight-attack-left.gif');
+    // Midnight only faces left in sprites
+    this.load.image('midnight_idle_right', 'assets/sprites/imgs/midnight/midnight-left.gif'); // Flip for right
+    this.load.image('midnight_point_right', 'assets/sprites/imgs/midnight/midnight-point-left.gif');
+    this.load.image('midnight_attack_right', 'assets/sprites/imgs/midnight/midnight-attack-left.gif');
+
+    // Load Angela sprites (non-attacking boss)
+    this.load.image('angela_idle_left', 'assets/sprites/imgs/angela/AL1.gif');
+    this.load.image('angela_walk_left_1', 'assets/sprites/imgs/angela/AL1.gif');
+    this.load.image('angela_walk_left_2', 'assets/sprites/imgs/angela/AL2.gif');
+    this.load.image('angela_walk_left_3', 'assets/sprites/imgs/angela/AL3.gif');
+    
+    this.load.image('angela_idle_right', 'assets/sprites/imgs/angela/AR1.gif');
+    this.load.image('angela_walk_right_1', 'assets/sprites/imgs/angela/AR1.gif');
+    this.load.image('angela_walk_right_2', 'assets/sprites/imgs/angela/AR2.gif');
+    this.load.image('angela_walk_right_3', 'assets/sprites/imgs/angela/AR3.gif');
+
+    // Load Tony sprites (final boss - placeholder for now, may need to add sprites)
+    // Using Blizz sprites as placeholder until Tony sprites are available
+    this.load.image('tony_idle_left', 'assets/sprites/imgs/Blizz/BL1.gif');
+    this.load.image('tony_walk_left_1', 'assets/sprites/imgs/Blizz/BL1.gif');
+    this.load.image('tony_walk_left_2', 'assets/sprites/imgs/Blizz/BL2.gif');
+    this.load.image('tony_walk_left_3', 'assets/sprites/imgs/Blizz/BL3.gif');
+    this.load.image('tony_attack_left', 'assets/sprites/imgs/Blizz/BLA.gif');
+    
+    this.load.image('tony_idle_right', 'assets/sprites/imgs/Blizz/BR1.gif');
+    this.load.image('tony_walk_right_1', 'assets/sprites/imgs/Blizz/BR1.gif');
+    this.load.image('tony_walk_right_2', 'assets/sprites/imgs/Blizz/BR2.gif');
+    this.load.image('tony_walk_right_3', 'assets/sprites/imgs/Blizz/BR3.gif');
+    this.load.image('tony_attack_right', 'assets/sprites/imgs/Blizz/BRA.gif');
   }
 
   /**

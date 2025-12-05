@@ -181,8 +181,28 @@ export class Enemy extends BaseEntity {
   update(): void {
     this.checkGrounded();
     this.updateAI();
+    this.updateState();
     this.updateAttackCooldown();
     this.updateAnimations();
+  }
+
+  /**
+   * Update enemy state based on movement and grounded status
+   */
+  private updateState(): void {
+    const body = this.sprite.body as Phaser.Physics.Arcade.Body;
+    if (!body) return;
+
+    // Update state based on velocity and grounded status
+    if (this.isGrounded) {
+      if (Math.abs(body.velocity.x) < 10 && this.getState() !== 'attacking') {
+        this.setState('idle');
+      } else if (this.getState() !== 'attacking' && this.getState() !== 'walking') {
+        this.setState('walking');
+      }
+    } else if (this.getState() !== 'jumping' && this.getState() !== 'attacking') {
+      this.setState('jumping');
+    }
   }
 
   /**
@@ -213,12 +233,17 @@ export class Enemy extends BaseEntity {
     // Play animation if it exists
     if (animKey && this.scene.anims.exists(animKey)) {
       if (this.sprite.anims.currentAnim?.key !== animKey) {
+        // When using directional animations (left/right), don't flip the sprite
+        // The animation key already handles direction
+        this.sprite.setFlipX(false);
         this.sprite.play(animKey, true);
       }
     } else {
       // Fallback: try to use texture directly
       const textureKey = `enemy_${this.enemyType}_idle_${direction}`;
       if (this.scene.textures.exists(textureKey)) {
+        // When using directional textures, don't flip - use the correct texture
+        this.sprite.setFlipX(false);
         this.sprite.setTexture(textureKey);
       }
     }
