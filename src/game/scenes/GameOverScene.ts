@@ -5,6 +5,7 @@ import { MusicContext } from '../../systems/audio/MusicState';
 export class GameOverScene extends Phaser.Scene {
   private isVictory: boolean = false;
   private score: number = 0;
+  // @ts-ignore - Assigned for display purposes, not read after assignment
   private finalScoreText?: Phaser.GameObjects.Text;
   private audioManager!: AudioManager;
 

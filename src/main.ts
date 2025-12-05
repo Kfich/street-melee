@@ -14,7 +14,8 @@ const config: Phaser.Types.Core.GameConfig = {
   width: 1024,
   height: 576,
   parent: 'game-container',
-  backgroundColor: '#000000',
+  backgroundColor: '#000000', // This will be covered by the background image
+  transparent: false,
   pixelArt: true, // Enable pixel-perfect rendering
   antialias: false, // Disable antialiasing for crisp pixel art
   physics: {

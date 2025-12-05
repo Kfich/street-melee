@@ -24,14 +24,13 @@ export interface SpecialMove {
  * Special move system for character special moves
  */
 export class SpecialMoveSystem {
-  private scene: Phaser.Scene;
   private specialMoves: Map<CharacterType, {
     forward: SpecialMove; // → + A
     neutral: SpecialMove; // A
   }> = new Map();
 
-  constructor(scene: Phaser.Scene) {
-    this.scene = scene;
+  constructor(_scene: Phaser.Scene) {
+    // Scene parameter kept for future use
     this.initializeSpecialMoves();
   }
 
@@ -60,7 +59,7 @@ export class SpecialMoveSystem {
         duration: 500,
         hitbox: { x: 0, y: -10, width: 60, height: 50 },
         knockback: { x: 150, y: 0 },
-        createHitbox: (owner, facingRight) => {
+        createHitbox: (owner, _facingRight) => {
           return new Hitbox(owner, 0, -10, 60, 50, 25, { x: 150, y: 0 }, false);
         }
       }
@@ -87,7 +86,7 @@ export class SpecialMoveSystem {
         duration: 500,
         hitbox: { x: 0, y: -10, width: 55, height: 50 },
         knockback: { x: 120, y: 0 },
-        createHitbox: (owner, facingRight) => {
+        createHitbox: (owner, _facingRight) => {
           return new Hitbox(owner, 0, -10, 55, 50, 22, { x: 120, y: 0 }, false);
         }
       }
@@ -114,7 +113,7 @@ export class SpecialMoveSystem {
         duration: 400,
         hitbox: { x: 0, y: -10, width: 65, height: 50 },
         knockback: { x: 200, y: -30 },
-        createHitbox: (owner, facingRight) => {
+        createHitbox: (owner, _facingRight) => {
           return new Hitbox(owner, 0, -10, 65, 50, 30, { x: 200, y: -30 }, true);
         }
       }
@@ -141,7 +140,7 @@ export class SpecialMoveSystem {
         duration: 450,
         hitbox: { x: 0, y: -10, width: 50, height: 50 },
         knockback: { x: 100, y: 0 },
-        createHitbox: (owner, facingRight) => {
+        createHitbox: (owner, _facingRight) => {
           return new Hitbox(owner, 0, -10, 50, 50, 18, { x: 100, y: 0 }, false);
         }
       }

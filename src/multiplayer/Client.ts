@@ -29,6 +29,7 @@ export class MultiplayerClient {
   private isConnected: boolean = false;
   private serverUrl: string;
   private onStateUpdate?: (state: GameState) => void;
+  // @ts-ignore - Set via callback, called when player joins
   private onPlayerJoined?: (playerId: string) => void;
   private onPlayerLeft?: (playerId: string) => void;
   private onRoomCreated?: (roomId: string) => void;

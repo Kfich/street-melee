@@ -6,12 +6,13 @@ import { PlayerInput } from '../../types/GameTypes';
  * Manages input for all players
  */
 export class InputManager {
-  private scene: Phaser.Scene;
-  private keyboard?: Phaser.Input.Keyboard.KeyboardManager;
+  // @ts-ignore - Stored for potential future use
+  private _scene: Phaser.Scene;
+  private keyboard?: Phaser.Input.Keyboard.KeyboardPlugin;
   private playerKeys: Map<number, Map<string, Phaser.Input.Keyboard.Key>> = new Map();
 
   constructor(scene: Phaser.Scene) {
-    this.scene = scene;
+    this._scene = scene;
     this.keyboard = scene.input.keyboard || undefined;
     this.initializeKeys();
   }

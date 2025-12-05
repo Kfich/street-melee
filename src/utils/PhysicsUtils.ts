@@ -34,7 +34,12 @@ export class PhysicsUtils {
   ): boolean {
     const body1 = sprite1.body as Phaser.Physics.Arcade.Body;
     const body2 = sprite2.body as Phaser.Physics.Arcade.Body;
-    return Phaser.Geom.Rectangle.Overlaps(body1, body2);
+    
+    // Create rectangles from bodies
+    const rect1 = new Phaser.Geom.Rectangle(body1.x, body1.y, body1.width, body1.height);
+    const rect2 = new Phaser.Geom.Rectangle(body2.x, body2.y, body2.width, body2.height);
+    
+    return Phaser.Geom.Rectangle.Overlaps(rect1, rect2);
   }
 }
 

@@ -6,6 +6,7 @@ import Phaser from 'phaser';
 export class ComboCounter {
   private scene: Phaser.Scene;
   private comboText?: Phaser.GameObjects.Text;
+  // @ts-ignore - Set but not read, kept for potential future tracking
   private comboCount: number = 0;
   private fadeTimer?: Phaser.Time.TimerEvent;
   private x: number;

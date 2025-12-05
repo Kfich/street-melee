@@ -22,6 +22,7 @@ import { GrabSystem } from '../../systems/combat/GrabSystem';
 import { Weapon } from '../../entities/weapons/Weapon';
 import { Item } from '../../entities/items/Item';
 import { LevelManager, LEVEL_CONFIGS } from '../../systems/level/LevelManager';
+import { RoomManager } from '../../systems/background/RoomManager';
 import { VisualEffects } from '../../systems/effects/VisualEffects';
 import { AudioManager } from '../../systems/audio/AudioManager';
 import { MusicContext } from '../../systems/audio/MusicState';
@@ -41,6 +42,7 @@ export class GameScene extends Phaser.Scene {
   private itemManager!: ItemManager;
   private grabSystem!: GrabSystem;
   private levelManager!: LevelManager;
+  private roomManager!: RoomManager;
   private visualEffects!: VisualEffects;
   private audioManager!: AudioManager;
   private multiplayerClient?: MultiplayerClient;
@@ -83,6 +85,9 @@ export class GameScene extends Phaser.Scene {
       this.itemManager = new ItemManager(this);
       this.grabSystem = new GrabSystem(this);
     
+    // Initialize room manager (handles backgrounds and room transitions)
+    this.roomManager = new RoomManager(this);
+    
     // Initialize level (use first level config)
     this.levelManager = new LevelManager(this, LEVEL_CONFIGS[0]);
     
@@ -124,11 +129,15 @@ export class GameScene extends Phaser.Scene {
       this.audioManager.playMusicWithContext('level1', MusicContext.GAMEPLAY, true);
     });
 
-    // Set physics world bounds to match level width (important for movement)
-    this.physics.world.setBounds(0, 0, this.levelManager.getLevelWidth(), height);
+    // Initialize room system (loads first room and backgrounds)
+    this.roomManager.initializeLevel('level1');
+    
+    // Set physics world bounds to match room width (important for movement)
+    const roomWidth = this.roomManager.getRoomWidth();
+    this.physics.world.setBounds(0, 0, roomWidth, height);
 
-    // Create ground (extend to level width)
-    this.createGround(this.levelManager.getLevelWidth(), height);
+    // Create ground (extend to room width)
+    this.createGround(roomWidth, height);
 
     // Create players (after ground is created)
     this.createPlayers(width, height);
@@ -232,7 +241,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private setupCamera(_levelWidth: number, _height: number) {
-    // Camera setup is now handled by LevelManager
+    // Camera setup is now handled by RoomManager
     // Just set up the follow
     if (this.players.length > 0) {
       this.cameras.main.startFollow(
@@ -241,10 +250,34 @@ export class GameScene extends Phaser.Scene {
         GameConfig.CAMERA_FOLLOW_LERP,
         GameConfig.CAMERA_FOLLOW_LERP
       );
+      
+      // Set camera deadzone for smoother following
+      this.cameras.main.setDeadzone(100, 50);
     }
   }
 
   private setupLevelEvents() {
+    // Room manager events
+    this.events.on('roomLoaded', (data: { roomId: string; roomName: string; width: number; height: number }) => {
+      console.log(`[GameScene] Room loaded: ${data.roomName} (${data.roomId})`);
+      // Update physics world bounds for new room
+      this.physics.world.setBounds(0, 0, data.width, data.height);
+    });
+
+    this.events.on('roomTransitionComplete', (data: { fromRoomId?: string; toRoomId: string; playerX: number; playerY: number }) => {
+      console.log(`[GameScene] Room transition complete: ${data.fromRoomId} -> ${data.toRoomId}`);
+      // Player position is already updated by RoomManager
+    });
+
+    this.events.on('levelStarted', (data: { levelId: string; levelName: string; roomId: string }) => {
+      console.log(`[GameScene] Level started: ${data.levelName} (${data.levelId})`);
+    });
+
+    this.events.on('levelTransitionComplete', (data: { fromLevelId?: string; toLevelId: string; playerX: number; playerY: number }) => {
+      console.log(`[GameScene] Level transition complete: ${data.fromLevelId} -> ${data.toLevelId}`);
+      // Could reset game state, spawn new enemies, etc.
+    });
+
     // Listen for level spawns
     this.events.on('enemySpawned', (enemy: Enemy) => {
       this.enemies.push(enemy);
@@ -252,6 +285,17 @@ export class GameScene extends Phaser.Scene {
       enemy.sprite.setData('entity', enemy);
       enemy.sprite.setData('isEnemy', true);
       this.physics.add.collider(enemy.sprite, this.ground);
+    });
+
+    // Listen for enemy defeats
+    this.events.on('entityDefeated', (entity: BaseEntity) => {
+      if (entity.sprite.getData('isEnemy')) {
+        const enemyId = entity.sprite.getData('enemyId');
+        const waveNumber = entity.sprite.getData('waveNumber');
+        if (this.levelManager && enemyId) {
+          this.levelManager.onEnemyDefeated(enemyId, waveNumber);
+        }
+      }
     });
 
     this.events.on('weaponSpawned', (weapon: Weapon) => {
@@ -290,12 +334,39 @@ export class GameScene extends Phaser.Scene {
     });
 
     // Level progression
-    this.events.on('levelChanged', (levelNumber: number) => {
-      console.log(`Level changed to ${levelNumber}`);
+    this.events.on('levelChanged', (data: { levelNumber: number; levelId: string; levelName: string } | number) => {
+      const levelInfo = typeof data === 'number' 
+        ? { levelNumber: data, levelId: `level${data}`, levelName: `Level ${data}` }
+        : data;
+      
+      console.log(`Level changed to ${levelInfo.levelName} (${levelInfo.levelId})`);
+      
+      // Clean up previous level entities
+      this.cleanupLevelEntities();
+      
+      // Reset player positions to start of new level
+      if (this.players.length > 0) {
+        this.players[0].sprite.setPosition(200, this.cameras.main.height - 100);
+        if (this.players.length > 1) {
+          this.players[1].sprite.setPosition(400, this.cameras.main.height - 100);
+        }
+      }
+      
       // Update UI, play level music, etc.
       if (this.audioManager) {
         this.audioManager.playMusicWithContext('level1', MusicContext.GAMEPLAY, true);
       }
+      
+      // Show level notification
+      if (this.waveNotification) {
+        this.waveNotification.showLevel(levelInfo.levelNumber, levelInfo.levelName);
+      }
+    });
+
+    // Level end reached
+    this.events.on('levelEndReached', () => {
+      console.log('[GameScene] Level end reached');
+      // This will be checked in checkVictory along with enemy defeat
     });
   }
 
@@ -833,6 +904,34 @@ export class GameScene extends Phaser.Scene {
       this.grabSystem.update();
     }
 
+    // Update room manager (background scrolling, room transitions)
+    if (this.roomManager && this.players[0]) {
+      const cameraX = this.cameras.main.scrollX;
+      const cameraY = this.cameras.main.scrollY;
+      const playerX = this.players[0].sprite.x;
+      const playerY = this.players[0].sprite.y;
+      
+      // Update background layers
+      this.roomManager.update(cameraX, cameraY);
+      
+      // Check for room transitions
+      const transition = this.roomManager.checkRoomTransition(playerX, playerY);
+      if (transition.transition && transition.newX !== undefined && transition.newY !== undefined) {
+        // Move player to new room position
+        this.players[0].sprite.setPosition(transition.newX, transition.newY);
+        
+        // Update physics world bounds for new room
+        const newRoomWidth = this.roomManager.getRoomWidth();
+        this.physics.world.setBounds(0, 0, newRoomWidth, this.cameras.main.height);
+        
+        // Update ground to match new room width
+        if (this.ground) {
+          this.ground.setSize(newRoomWidth, 100);
+          (this.ground.body as Phaser.Physics.Arcade.Body).setSize(newRoomWidth, 100);
+        }
+      }
+    }
+
     // Update level manager (scrolling, etc.)
     if (this.levelManager) {
       const cameraX = this.cameras.main.scrollX;
@@ -906,19 +1005,117 @@ export class GameScene extends Phaser.Scene {
   }
 
   private checkVictory() {
+    if (!this.levelManager) return;
+
     // Check if all enemies are defeated
     const aliveEnemies = this.enemies.filter(enemy => 
       enemy && enemy.sprite && enemy.sprite.active && enemy.isAlive()
     );
 
-    if (aliveEnemies.length === 0 && this.enemies.length > 0) {
-      // All enemies defeated - victory!
+    const allEnemiesDefeated = aliveEnemies.length === 0 && this.enemies.length > 0;
+    
+    // Check if level is complete
+    const isLevelComplete = this.levelManager.isLevelComplete(allEnemiesDefeated);
+    
+    if (isLevelComplete) {
+      // Level completed! Progress to next level or show victory
+      this.completeLevel();
+    }
+  }
+
+  private completeLevel() {
+    if (!this.levelManager) return;
+
+    const currentLevelIndex = this.levelManager.getCurrentLevel() - 1;
+    const nextLevelIndex = currentLevelIndex + 1;
+    
+    // Check if there's a next level
+    if (nextLevelIndex < LEVEL_CONFIGS.length) {
+      // Progress to next level
+      console.log(`[GameScene] Level ${currentLevelIndex + 1} complete! Progressing to level ${nextLevelIndex + 1}...`);
+      
+      // Play level complete sound
+      if (this.audioManager) {
+        this.audioManager.playSound('levelAdvance');
+      }
+      
+      // Show level complete notification
+      if (this.waveNotification) {
+        this.waveNotification.showLevelComplete(this.levelManager.getCurrentLevel());
+      }
+      
+      // Wait a moment before transitioning
+      this.time.delayedCall(2000, () => {
+        // Clean up current level entities
+        this.cleanupLevelEntities();
+        
+        // Progress to next level
+        this.levelManager.nextLevel(LEVEL_CONFIGS[nextLevelIndex]);
+        
+        // Update ground size for new level
+        const newLevelWidth = this.levelManager.getLevelWidth();
+        if (this.ground) {
+          this.ground.setSize(newLevelWidth, 100);
+          (this.ground.body as Phaser.Physics.Arcade.Body).setSize(newLevelWidth, 100);
+        }
+        
+        // Update physics world bounds
+        this.physics.world.setBounds(0, 0, newLevelWidth, this.cameras.main.height);
+      });
+    } else {
+      // All levels complete - victory!
+      console.log('[GameScene] All levels complete! Victory!');
       const score = this.itemManager.getScore();
-      this.scene.start('GameOverScene', {
-        victory: true,
-        score: score
+      
+      // Play victory sound
+      if (this.audioManager) {
+        this.audioManager.playSound('levelAdvance');
+      }
+      
+      // Show victory screen
+      this.time.delayedCall(1500, () => {
+        this.scene.start('GameOverScene', {
+          victory: true,
+          score: score
+        });
       });
     }
+  }
+
+  private cleanupLevelEntities() {
+    // Clean up enemies
+    this.enemies.forEach(enemy => {
+      if (enemy && enemy.sprite) {
+        enemy.sprite.destroy();
+      }
+    });
+    this.enemies = [];
+    
+    // Clean up weapons
+    const allWeapons = this.weaponManager.getAll();
+    allWeapons.forEach(weapon => {
+      if (weapon && weapon.sprite) {
+        weapon.sprite.destroy();
+      }
+    });
+    allWeapons.length = 0;
+    
+    // Clean up items
+    const allItems = this.itemManager.getAll();
+    allItems.forEach(item => {
+      if (item && item.sprite) {
+        item.sprite.destroy();
+      }
+    });
+    allItems.length = 0;
+    
+    // Clean up shadows
+    this.enemyShadows.forEach(shadow => {
+      if (shadow) {
+        shadow.destroy();
+      }
+    });
+    this.enemyShadows.clear();
   }
 
   /**

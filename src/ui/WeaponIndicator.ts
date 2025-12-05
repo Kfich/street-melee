@@ -10,7 +10,7 @@ export class WeaponIndicator {
   private text?: Phaser.GameObjects.Text;
   private x: number;
   private y: number;
-  private weaponType: WeaponType | null = null;
+  // Removed unused weaponType property
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
     this.scene = scene;
@@ -43,8 +43,6 @@ export class WeaponIndicator {
    * Update weapon display
    */
   updateWeapon(weaponType: WeaponType | null) {
-    this.weaponType = weaponType;
-
     if (weaponType && this.icon && this.text) {
       // Weapon colors
       const colors: Record<WeaponType, number> = {

@@ -71,7 +71,7 @@ export class WaveNotification {
   /**
    * Show checkpoint notification
    */
-  showCheckpoint(checkpointId: string) {
+  showCheckpoint(_checkpointId: string) {
     if (!this.notificationText) return;
 
     this.notificationText.setText('CHECKPOINT');
@@ -97,6 +97,86 @@ export class WaveNotification {
       scale: 0.9,
       duration: 400,
       delay: 1000,
+      ease: 'Power2',
+      onComplete: () => {
+        if (this.notificationText) {
+          this.notificationText.setVisible(false);
+          this.notificationText.setColor('#ffff00'); // Reset color
+        }
+      }
+    });
+  }
+
+  /**
+   * Show level notification
+   */
+  showLevel(levelNumber: number, levelName?: string) {
+    if (!this.notificationText) return;
+
+    const text = levelName ? `${levelName.toUpperCase()}` : `LEVEL ${levelNumber}`;
+    this.notificationText.setText(text);
+    this.notificationText.setColor('#00ffff');
+    this.notificationText.setVisible(true);
+    this.notificationText.setAlpha(1);
+    this.notificationText.setScale(1);
+
+    // Scale animation
+    this.scene.tweens.add({
+      targets: this.notificationText,
+      scaleX: 1.5,
+      scaleY: 1.5,
+      duration: 300,
+      yoyo: true,
+      ease: 'Power2'
+    });
+
+    // Fade out after delay
+    this.scene.tweens.add({
+      targets: this.notificationText,
+      alpha: 0,
+      scale: 0.8,
+      duration: 600,
+      delay: 2000,
+      ease: 'Power2',
+      onComplete: () => {
+        if (this.notificationText) {
+          this.notificationText.setVisible(false);
+          this.notificationText.setColor('#ffff00'); // Reset color
+        }
+      }
+    });
+  }
+
+  /**
+   * Show level complete notification
+   */
+  showLevelComplete(levelNumber: number) {
+    if (!this.notificationText) return;
+
+    this.notificationText.setText(`LEVEL ${levelNumber} COMPLETE!`);
+    this.notificationText.setColor('#00ff00');
+    this.notificationText.setVisible(true);
+    this.notificationText.setAlpha(1);
+    this.notificationText.setScale(1);
+
+    // Scale animation
+    this.scene.tweens.add({
+      targets: this.notificationText,
+      scaleX: 1.4,
+      scaleY: 1.4,
+      duration: 250,
+      yoyo: true,
+      ease: 'Power2',
+      repeat: 2
+    });
+
+    // Fade out after delay
+    this.scene.tweens.add({
+      targets: this.notificationText,
+      alpha: 0,
+      scale: 0.9,
+      duration: 500,
+      delay: 1500,
       ease: 'Power2',
       onComplete: () => {
         if (this.notificationText) {

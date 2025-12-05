@@ -8,7 +8,7 @@ import { BaseCharacter } from '../../entities/characters/BaseCharacter';
 export class WeaponManager {
   private scene: Phaser.Scene;
   private weapons: Weapon[] = [];
-  private weaponSpawnPoints: { x: number; y: number }[] = [];
+  // Removed unused weaponSpawnPoints
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;

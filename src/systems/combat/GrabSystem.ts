@@ -1,8 +1,6 @@
 import Phaser from 'phaser';
 import { BaseCharacter } from '../../entities/characters/BaseCharacter';
 import { BaseEntity } from '../../entities/base/BaseEntity';
-import { Hitbox } from './Hitbox';
-import { GameConfig } from '../../config/GameConfig';
 
 export type GrabType = 'front' | 'back' | 'fullNelson';
 

@@ -45,6 +45,8 @@ export interface LevelData {
     minY: number;
     maxY: number;
   };
+  endTriggerX?: number; // Optional: X position that triggers level completion
+  requiresAllWaves?: boolean; // If true, all waves must be complete AND all enemies defeated
 }
 
 /**
@@ -61,6 +63,9 @@ export class LevelManager {
   private currentWave: number = 0;
   private checkpoints: Map<string, Checkpoint> = new Map();
   private levelStartTime: number = 0;
+  private waveEnemies: Map<number, Set<string>> = new Map(); // Track enemies per wave by their sprite ID
+  private completedWaves: Set<number> = new Set();
+  private spawnedEnemies: Set<string> = new Set(); // Track all spawned enemy IDs
 
   constructor(scene: Phaser.Scene, levelData: LevelData) {
     this.scene = scene;
@@ -140,6 +145,20 @@ export class LevelManager {
             spawnPoint.y,
             spawnPoint.enemyType
           );
+          const enemyId = `enemy_${spawnPoint.x}_${spawnPoint.y}_${Date.now()}_${Math.random()}`;
+          enemy.sprite.setData('enemyId', enemyId);
+          enemy.sprite.setData('waveNumber', spawnPoint.wave || 0);
+          
+          this.spawnedEnemies.add(enemyId);
+          
+          // If spawned from a wave spawn point, track it
+          if (spawnPoint.wave !== undefined && spawnPoint.wave > 0) {
+            const waveEnemySet = this.waveEnemies.get(spawnPoint.wave);
+            if (waveEnemySet) {
+              waveEnemySet.add(enemyId);
+            }
+          }
+          
           this.scene.events.emit('enemySpawned', enemy);
         }
         break;
@@ -232,6 +251,11 @@ export class LevelManager {
     // Check for wave triggers
     if (playerX !== undefined) {
       this.checkWaveTriggers(playerX);
+      
+      // Check for level end trigger
+      if (this.levelData.endTriggerX && playerX >= this.levelData.endTriggerX) {
+        this.scene.events.emit('levelEndReached');
+      }
     }
 
     // Check for checkpoint activation
@@ -276,6 +300,7 @@ export class LevelManager {
   private triggerWave(wave: Wave) {
     this.activeWaves.add(wave.waveNumber);
     this.currentWave = wave.waveNumber;
+    this.waveEnemies.set(wave.waveNumber, new Set());
     this.scene.events.emit('waveStarted', wave);
 
     wave.enemies.forEach((enemy, index) => {
@@ -288,6 +313,16 @@ export class LevelManager {
           enemy.y,
           enemy.type
         );
+        const enemyId = `${enemyEntity.sprite.name || 'enemy'}_${enemyEntity.sprite.x}_${enemyEntity.sprite.y}_${Date.now()}`;
+        enemyEntity.sprite.setData('enemyId', enemyId);
+        enemyEntity.sprite.setData('waveNumber', wave.waveNumber);
+        
+        this.spawnedEnemies.add(enemyId);
+        const waveEnemySet = this.waveEnemies.get(wave.waveNumber);
+        if (waveEnemySet) {
+          waveEnemySet.add(enemyId);
+        }
+        
         this.scene.events.emit('enemySpawned', enemyEntity);
       });
     });
@@ -329,11 +364,58 @@ export class LevelManager {
   }
 
   /**
+   * Notify that an enemy was defeated
+   */
+  onEnemyDefeated(enemyId: string, waveNumber?: number): void {
+    this.spawnedEnemies.delete(enemyId);
+    
+    if (waveNumber !== undefined) {
+      const waveEnemySet = this.waveEnemies.get(waveNumber);
+      if (waveEnemySet) {
+        waveEnemySet.delete(enemyId);
+        
+        // Check if wave is complete (all enemies in wave defeated)
+        if (waveEnemySet.size === 0 && !this.completedWaves.has(waveNumber)) {
+          this.completedWaves.add(waveNumber);
+          this.scene.events.emit('waveCompleted', waveNumber);
+        }
+      }
+    }
+  }
+
+  /**
    * Check if all waves are complete
    */
   areAllWavesComplete(): boolean {
-    return this.levelData.waves.length > 0 && 
-           this.activeWaves.size === this.levelData.waves.length;
+    if (this.levelData.waves.length === 0) {
+      return true; // No waves means level is always "complete"
+    }
+    
+    // Check if all waves have been triggered and completed
+    const allWavesTriggered = this.activeWaves.size === this.levelData.waves.length;
+    const allWavesCompleted = this.completedWaves.size === this.levelData.waves.length;
+    
+    return allWavesTriggered && allWavesCompleted;
+  }
+
+  /**
+   * Check if level is complete
+   */
+  isLevelComplete(allEnemiesDefeated: boolean): boolean {
+    // If level requires all waves, check both conditions
+    if (this.levelData.requiresAllWaves !== false) {
+      return this.areAllWavesComplete() && allEnemiesDefeated;
+    }
+    
+    // Otherwise, just check if all enemies are defeated
+    return allEnemiesDefeated;
+  }
+
+  /**
+   * Get remaining enemies count
+   */
+  getRemainingEnemiesCount(): number {
+    return this.spawnedEnemies.size;
   }
 
   /**
@@ -361,12 +443,20 @@ export class LevelManager {
     this.levelData = newLevelData;
     this.levelStartTime = this.scene.time.now;
     this.activeWaves.clear();
+    this.completedWaves.clear();
     this.currentWave = 0;
     this.checkpoints.clear();
+    this.waveEnemies.clear();
+    this.spawnedEnemies.clear();
+    this.scrollOffset = 0;
     
     // Clean up old background
     this.backgroundLayers.forEach(layer => layer.destroy());
     this.backgroundLayers = [];
+    
+    // Clean up spawn timers
+    this.spawnTimers.forEach(timer => timer.destroy());
+    this.spawnTimers.clear();
     
     // Setup new level
     this.createBackground();
@@ -374,7 +464,25 @@ export class LevelManager {
     this.initializeCheckpoints();
     this.initializeSpawns();
     
-    this.scene.events.emit('levelChanged', this.currentLevel);
+    this.scene.events.emit('levelChanged', {
+      levelNumber: this.currentLevel,
+      levelId: newLevelData.id,
+      levelName: newLevelData.name
+    });
+  }
+
+  /**
+   * Get level ID
+   */
+  getLevelId(): string {
+    return this.levelData.id;
+  }
+
+  /**
+   * Get level name
+   */
+  getLevelName(): string {
+    return this.levelData.name;
   }
 
   /**
@@ -382,8 +490,14 @@ export class LevelManager {
    */
   destroy() {
     this.backgroundLayers.forEach(layer => layer.destroy());
+    this.backgroundLayers = [];
     this.spawnTimers.forEach(timer => timer.destroy());
     this.spawnTimers.clear();
+    this.activeWaves.clear();
+    this.completedWaves.clear();
+    this.waveEnemies.clear();
+    this.spawnedEnemies.clear();
+    this.checkpoints.clear();
   }
 }
 
@@ -452,7 +566,9 @@ export const LEVEL_CONFIGS: LevelData[] = [
       { x: 1000, y: 476, id: 'checkpoint1', activated: false },
       { x: 2000, y: 476, id: 'checkpoint2', activated: false },
       { x: 2800, y: 476, id: 'checkpoint3', activated: false }
-    ]
+    ],
+    endTriggerX: 2950, // Level completes when player reaches near the end
+    requiresAllWaves: true // All waves must be complete AND all enemies defeated
   },
   {
     id: 'level2',
@@ -507,7 +623,9 @@ export const LEVEL_CONFIGS: LevelData[] = [
       { x: 1500, y: 476, id: 'checkpoint1', activated: false },
       { x: 3000, y: 476, id: 'checkpoint2', activated: false },
       { x: 3800, y: 476, id: 'checkpoint3', activated: false }
-    ]
+    ],
+    endTriggerX: 3950, // Level completes when player reaches near the end
+    requiresAllWaves: true // All waves must be complete AND all enemies defeated
   }
   // Add more levels here as needed
 ];

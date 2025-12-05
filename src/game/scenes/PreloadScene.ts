@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { CHARACTER_SPRITE_MAP } from '../../systems/animation/SpriteLoader';
 import { CharacterType } from '../types/CharacterType';
 import { SOUND_EFFECTS, MUSIC_TRACKS } from '../../config/AudioConfig';
+import { BackgroundLoader } from '../../systems/background/BackgroundLoader';
 
 /**
  * Preload scene for loading all game assets
@@ -37,6 +38,9 @@ export class PreloadScene extends Phaser.Scene {
 
     // Load item sprites
     this.loadItemSprites();
+
+    // Load background images (including level room images)
+    BackgroundLoader.preloadBackgrounds(this);
 
     // Load audio files
     this.loadAudioFiles();

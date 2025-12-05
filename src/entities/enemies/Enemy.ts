@@ -85,9 +85,10 @@ export class Enemy extends BaseEntity {
     this.sprite.setOrigin(config.originX, config.originY);
     
     // Get actual texture dimensions
-    const texture = this.scene.textures.get(this.sprite.texture.key);
-    const frameKeys = Object.keys(texture.frames);
-    const frame = frameKeys.length > 0 ? texture.frames[frameKeys[0]] : null;
+    const texture = this.sprite.texture;
+    const frameKeys = Object.keys(texture.frames || {});
+    const firstFrameKey = frameKeys.length > 0 ? frameKeys[0] : null;
+    const frame = firstFrameKey ? (texture.frames as Record<string, Phaser.Textures.Frame>)[firstFrameKey] : null;
     
     if (frame) {
       const actualWidth = frame.width;

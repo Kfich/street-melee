@@ -107,7 +107,6 @@ export class Item extends BaseEntity {
     
     // Apply health restoration
     if (effect.healthRestore) {
-      const currentHealth = character.getHealth();
       const maxHealth = character.getMaxHealth();
       character.takeDamage(-effect.healthRestore); // Negative damage = healing
       // Clamp to max health

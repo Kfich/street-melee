@@ -1,6 +1,5 @@
 import Phaser from 'phaser';
 import { BaseEntity } from '../base/BaseEntity';
-import { GameConfig } from '../../config/GameConfig';
 import { Hitbox } from '../../systems/combat/Hitbox';
 
 export type WeaponType = 'pipe' | 'knife' | 'bottle' | 'bat';
@@ -54,7 +53,7 @@ export class Weapon extends BaseEntity {
   private maxThrows: number = 3;
   private owner: Phaser.Physics.Arcade.Sprite | null = null;
   private isThrown: boolean = false;
-  private throwVelocity: { x: number; y: number } | null = null;
+  // Removed unused throwVelocity - velocity is set directly on body
 
   constructor(scene: Phaser.Scene, x: number, y: number, weaponType: WeaponType = 'pipe') {
     super(scene, x, y, 'weapon');
@@ -86,7 +85,6 @@ export class Weapon extends BaseEntity {
   pickup(owner: Phaser.Physics.Arcade.Sprite) {
     this.owner = owner;
     this.isThrown = false;
-    this.throwVelocity = null;
     
     // Attach to owner (will be positioned in update)
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
@@ -106,7 +104,6 @@ export class Weapon extends BaseEntity {
     this.throwCount++;
     this.owner = null;
     this.isThrown = false;
-    this.throwVelocity = null;
     
     // Position weapon where owner was (using saved position)
     if (this.sprite && this.sprite.active) {
@@ -122,7 +119,7 @@ export class Weapon extends BaseEntity {
   /**
    * Throw weapon in a direction
    */
-  throw(direction: 'left' | 'right', throwPower: number = 400) {
+  throw(_direction: 'left' | 'right', throwPower: number = 400) {
     if (!this.owner) return;
     
     // Save owner properties before clearing reference
@@ -138,7 +135,7 @@ export class Weapon extends BaseEntity {
       
       // Set throw velocity
       const throwX = facingRight ? throwPower : -throwPower;
-      this.throwVelocity = { x: throwX, y: -100 };
+      // Velocity set directly on body below
       
       const body = this.sprite.body as Phaser.Physics.Arcade.Body;
       if (body) {
@@ -209,7 +206,7 @@ export class Weapon extends BaseEntity {
   update(): void {
     // If weapon is owned, follow owner
     if (this.owner && !this.isThrown) {
-      const ownerBody = this.owner.body as Phaser.Physics.Arcade.Body;
+      // Owner body used for positioning
       const facingRight = !this.owner.flipX;
       const offsetX = facingRight ? 15 : -15;
       
@@ -225,7 +222,6 @@ export class Weapon extends BaseEntity {
       if (body.touching.down) {
         body.setVelocity(0, 0);
         this.isThrown = false;
-        this.throwVelocity = null;
         
         // If max throws reached, destroy
         if (this.throwCount >= this.maxThrows) {

@@ -62,7 +62,15 @@ export class Hitbox {
     const bounds = this.getWorldBounds();
     const spriteBody = sprite.body as Phaser.Physics.Arcade.Body;
     
-    return Phaser.Geom.Rectangle.Overlaps(bounds, spriteBody);
+    // Create a rectangle from the sprite body
+    const spriteRect = new Phaser.Geom.Rectangle(
+      spriteBody.x,
+      spriteBody.y,
+      spriteBody.width,
+      spriteBody.height
+    );
+    
+    return Phaser.Geom.Rectangle.Overlaps(bounds, spriteRect);
   }
 
   /**
