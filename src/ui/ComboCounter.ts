@@ -22,7 +22,7 @@ export class ComboCounter {
   private createComboText() {
     this.comboText = this.scene.add.text(this.x, this.y, '', {
       fontSize: '32px',
-      fontFamily: 'Arial',
+      fontFamily: '"Press Start 2P", "Courier New", monospace',
       color: '#ffff00',
       stroke: '#000000',
       strokeThickness: 4,
@@ -34,33 +34,66 @@ export class ComboCounter {
   }
 
   /**
-   * Update combo count
+   * Update combo count with enhanced animations
    */
   updateCombo(count: number) {
     this.comboCount = count;
     
     if (count > 1) {
       if (this.comboText) {
-        this.comboText.setText(`${count}x COMBO!`);
+        // Enhanced text with milestones
+        let comboText = `${count}x COMBO!`;
+        if (count >= 20) {
+          comboText = `${count}x MEGA COMBO!!`;
+        } else if (count >= 15) {
+          comboText = `${count}x ULTRA COMBO!`;
+        } else if (count >= 10) {
+          comboText = `${count}x PERFECT COMBO!`;
+        }
+        
+        this.comboText.setText(comboText);
         this.comboText.setVisible(true);
         
-        // Scale animation
+        // More dramatic scale animation for higher combos
+        const scaleAmount = count >= 10 ? 2.0 : count >= 5 ? 1.8 : 1.5;
+        const animDuration = count >= 10 ? 200 : 100;
+        
         this.scene.tweens.add({
           targets: this.comboText,
-          scaleX: 1.5,
-          scaleY: 1.5,
-          duration: 100,
+          scaleX: scaleAmount,
+          scaleY: scaleAmount,
+          duration: animDuration,
           yoyo: true,
-          ease: 'Power2'
+          ease: 'Back.easeOut'
         });
-
-        // Color based on combo count
+        
+        // Rotation effect for high combos
         if (count >= 10) {
-          this.comboText.setColor('#ff00ff'); // Purple for high combos
+          this.scene.tweens.add({
+            targets: this.comboText,
+            angle: 5,
+            duration: 100,
+            yoyo: true,
+            ease: 'Sine.easeInOut'
+          });
+        }
+
+        // Color and styling based on combo count
+        if (count >= 20) {
+          this.comboText.setColor('#ff00ff'); // Bright purple for mega combos
+          this.comboText.setFontSize('40px');
+        } else if (count >= 15) {
+          this.comboText.setColor('#ff00ff'); // Purple for ultra combos
+          this.comboText.setFontSize('36px');
+        } else if (count >= 10) {
+          this.comboText.setColor('#ff00ff'); // Purple for perfect combos
+          this.comboText.setFontSize('32px');
         } else if (count >= 5) {
           this.comboText.setColor('#ff6600'); // Orange for medium combos
+          this.comboText.setFontSize('32px');
         } else {
           this.comboText.setColor('#ffff00'); // Yellow for low combos
+          this.comboText.setFontSize('32px');
         }
       }
 
@@ -69,8 +102,11 @@ export class ComboCounter {
         this.fadeTimer.destroy();
       }
 
+      // Longer display time for higher combos
+      const displayTime = count >= 10 ? 3000 : 2000;
+      
       // Fade out after delay
-      this.fadeTimer = this.scene.time.delayedCall(2000, () => {
+      this.fadeTimer = this.scene.time.delayedCall(displayTime, () => {
         if (this.comboText) {
           this.scene.tweens.add({
             targets: this.comboText,

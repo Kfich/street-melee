@@ -36,10 +36,20 @@ export class CombatSystem {
     // Check each active hitbox against all targets
     this.activeHitboxes.forEach(hitbox => {
       if (!hitbox.active) return;
+      
+      // Verify hitbox owner still exists
+      if (!hitbox.owner || !hitbox.owner.active) {
+        return;
+      }
 
       const hitTargets = this.hitTargets.get(hitbox) || new Set();
 
       targets.forEach(target => {
+        // Verify target and sprite exist and are active
+        if (!target || !target.sprite || !target.sprite.active) {
+          return;
+        }
+        
         // Skip if already hit by this hitbox
         if (hitTargets.has(target.sprite)) return;
         
@@ -62,6 +72,16 @@ export class CombatSystem {
    * Apply damage from a hitbox to a target
    */
   private applyDamage(target: BaseEntity, hitbox: Hitbox) {
+    // Validate target and sprite exist
+    if (!target || !target.sprite || !target.sprite.active) {
+      return; // Target is destroyed or invalid
+    }
+    
+    // Validate hitbox owner exists
+    if (!hitbox.owner || !hitbox.owner.active) {
+      return; // Hitbox owner is destroyed
+    }
+    
     const damageInfo: DamageInfo = {
       amount: hitbox.damage,
       isKnockdown: hitbox.isKnockdown,
@@ -70,8 +90,10 @@ export class CombatSystem {
 
     target.takeDamage(damageInfo.amount);
     
-    // Emit combo hit event if this is a player hitting an enemy or boss
+    // Get player index for combo tracking and damage event
     const playerIndex = hitbox.owner.getData('playerIndex');
+    
+    // Emit combo hit event if this is a player hitting an enemy or boss
     if (playerIndex !== undefined && playerIndex >= 0) {
       // Check if target is an enemy or boss (not a player)
       const isEnemy = target.sprite.getData('isEnemy');
@@ -102,12 +124,22 @@ export class CombatSystem {
       x: target.sprite.x,
       y: target.sprite.y,
       isHeavy: isHeavy,
-      isKnockdown: isKnockdown
+      isKnockdown: isKnockdown,
+      playerIndex: playerIndex !== undefined ? playerIndex : undefined
     });
 
     // Apply knockback with improved curves
     if (damageInfo.knockback) {
+      // Check if sprite and body exist and are active
+      if (!target.sprite || !target.sprite.active || !target.sprite.body) {
+        return; // Entity is destroyed or has no physics body
+      }
+      
       const body = target.sprite.body as Phaser.Physics.Arcade.Body;
+      if (!body) {
+        return; // Body is null/undefined
+      }
+      
       const facingRight = !hitbox.owner.flipX;
       const knockbackX = facingRight ? damageInfo.knockback.x : -damageInfo.knockback.x;
       
@@ -130,11 +162,20 @@ export class CombatSystem {
         duration: knockbackDuration,
         ease: 'Power2',
         onUpdate: (tween) => {
+          // Check if body still exists before updating
+          if (!target.sprite || !target.sprite.active || !target.sprite.body) {
+            tween.stop();
+            return;
+          }
+          
           const progress = tween.getValue();
           if (progress !== null && progress !== undefined) {
-            body.setVelocityX(startVelX * progress);
-            if (startVelY !== 0) {
-              body.setVelocityY(startVelY * progress);
+            const currentBody = target.sprite.body as Phaser.Physics.Arcade.Body;
+            if (currentBody) {
+              currentBody.setVelocityX(startVelX * progress);
+              if (startVelY !== 0) {
+                currentBody.setVelocityY(startVelY * progress);
+              }
             }
           }
         }
@@ -152,8 +193,10 @@ export class CombatSystem {
       });
     }
 
-    // Visual feedback (flash)
-    this.flashSprite(target.sprite);
+    // Visual feedback (flash) - only if sprite still exists
+    if (target.sprite && target.sprite.active) {
+      this.flashSprite(target.sprite);
+    }
   }
 
   /**

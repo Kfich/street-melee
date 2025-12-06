@@ -66,7 +66,13 @@ export abstract class BaseEntity {
    * Negative amounts heal
    */
   takeDamage(amount: number): void {
+    const wasAlive = this.health > 0;
     this.health = Math.max(0, Math.min(this.maxHealth, this.health - amount));
+    
+    // Emit defeat event if entity just died
+    if (wasAlive && this.health <= 0) {
+      this.scene.events.emit('entityDefeated', this);
+    }
   }
 
   /**

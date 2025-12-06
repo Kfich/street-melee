@@ -62,8 +62,10 @@ export class RoomManager {
    * Load a room and set up its backgrounds
    */
   private loadRoom(roomConfig: RoomConfig, isInitial: boolean = false): void {
-    if (this.transitionInProgress) {
-      return; // Prevent overlapping transitions
+    // Allow loading during transition (it's expected during room transitions)
+    // But prevent if not initial and not transitioning (shouldn't happen, but safety check)
+    if (!isInitial && !this.transitionInProgress) {
+      console.warn(`[RoomManager] Attempted to load room ${roomConfig.id} when not transitioning`);
     }
 
     console.log(`[RoomManager] Loading room: ${roomConfig.name} (${roomConfig.id})`);
@@ -74,7 +76,12 @@ export class RoomManager {
       this.cleanupRoom();
     }
 
+    // Update currentRoom - this is safe because:
+    // 1. During transition, currentRoom is already set in startRoomTransition
+    // 2. During initial load, we want to set it here
+    // Setting it again is safe and ensures consistency
     this.currentRoom = roomConfig;
+    console.log(`[RoomManager] Current room updated to: ${this.currentRoom.id}`);
 
     // Create background layers immediately
     // If textures aren't ready, they'll use placeholder and we can retry
@@ -388,20 +395,20 @@ export class RoomManager {
    * Check if player should transition to next room
    */
   checkRoomTransition(playerX: number, playerY: number): { transition: boolean; newX?: number; newY?: number } {
+    // Prevent transitions if already in progress or no current room
     if (!this.currentRoom || this.transitionInProgress) {
       return { transition: false };
     }
 
-    // Check for room exit (right edge)
-    if (this.currentRoom.exitX && playerX >= this.currentRoom.exitX) {
-      return this.transitionToNextRoom('right', playerX, playerY);
-    }
-
-    // Check for level exit (if nextLevelId is set)
-    if (this.currentRoom.nextLevelId) {
-      if (this.currentRoom.exitX && playerX >= this.currentRoom.exitX) {
+    // Check for room exit (right edge) - only trigger if player is actually at the exit
+    // Add a small buffer to prevent edge case re-triggering
+    if (this.currentRoom.exitX && playerX >= this.currentRoom.exitX - 10) {
+      // Check for level exit first (if nextLevelId is set)
+      if (this.currentRoom.nextLevelId) {
         return this.transitionToNextLevel(this.currentRoom.nextLevelId, playerX, playerY);
       }
+      // Otherwise transition to next room
+      return this.transitionToNextRoom('right', playerX, playerY);
     }
 
     return { transition: false };
@@ -411,7 +418,7 @@ export class RoomManager {
    * Transition to the next room
    */
   private transitionToNextRoom(direction: 'left' | 'right' | 'up' | 'down', _playerX: number, _playerY: number): { transition: boolean; newX?: number; newY?: number } {
-    if (!this.currentLevel || !this.currentRoom) {
+    if (!this.currentLevel || !this.currentRoom || this.transitionInProgress) {
       return { transition: false };
     }
 
@@ -430,19 +437,29 @@ export class RoomManager {
     const nextRoom = this.currentLevel.rooms[nextRoomIndex];
     
     // Calculate new player position based on transition direction
+    // Ensure player spawns well before the exit to prevent immediate re-triggering
     let newX = nextRoom.spawnX;
     let newY = nextRoom.spawnY;
 
     // Adjust spawn position based on transition direction
+    // IMPORTANT: Spawn player well away from the exit to prevent immediate re-triggering
     if (direction === 'right') {
-      // Coming from left, spawn at left edge
-      newX = nextRoom.spawnX;
+      // Coming from left, spawn at left edge (spawnX, which should be around 200)
+      newX = Math.max(100, nextRoom.spawnX); // Ensure at least 100px from left edge
+      // Double-check: if spawnX is too close to exit, move it further left
+      // Exit is typically at width - 100, so ensure at least 300px gap
+      if (nextRoom.exitX && newX >= nextRoom.exitX - 300) {
+        newX = Math.max(100, nextRoom.exitX - 300);
+      }
     } else if (direction === 'left') {
       // Coming from right, spawn at right edge
-      newX = nextRoom.width - 100;
+      newX = nextRoom.width - 200; // Spawn further from right edge to prevent immediate exit
     }
 
-    // Start transition
+    console.log(`[RoomManager] Player will spawn at (${newX}, ${newY}) in room ${nextRoom.id}`);
+    console.log(`[RoomManager] Room exit is at X=${nextRoom.exitX}, distance from spawn: ${nextRoom.exitX ? nextRoom.exitX - newX : 'N/A'}`);
+
+    // Start transition (this sets transitionInProgress = true)
     this.startRoomTransition(nextRoom, newX, newY);
 
     return {
@@ -456,15 +473,49 @@ export class RoomManager {
    * Start room transition with visual effects
    */
   private startRoomTransition(nextRoom: RoomConfig, newX: number, newY: number): void {
+    if (this.transitionInProgress) {
+      return; // Already transitioning
+    }
+    
     this.transitionInProgress = true;
+    
+    // Store the previous room ID before transition
+    const fromRoomId = this.currentRoom?.id;
+    
+    console.log(`[RoomManager] Starting transition: ${fromRoomId} -> ${nextRoom.id}`);
+
+    // Update current room index immediately
+    const newRoomIndex = this.currentLevel!.rooms.findIndex(r => r.id === nextRoom.id);
+    if (newRoomIndex === -1) {
+      console.error(`[RoomManager] Failed to find room index for ${nextRoom.id}`);
+      this.transitionInProgress = false;
+      return;
+    }
+    
+    this.currentRoomIndex = newRoomIndex;
+    
+    // CRITICAL: Update currentRoom IMMEDIATELY to prevent re-triggering
+    // This ensures checkRoomTransition uses the new room's exitX, not the old one
+    this.currentRoom = nextRoom;
+    console.log(`[RoomManager] Current room updated to: ${nextRoom.id} (index ${newRoomIndex})`);
+
+    // Emit event to update player position IMMEDIATELY (before fade)
+    // This prevents the player from being at the exit when the new room loads
+    this.scene.events.emit('roomTransitionStart', {
+      fromRoomId: fromRoomId,
+      toRoomId: nextRoom.id,
+      playerX: newX,
+      playerY: newY
+    });
 
     // Fade out current room
     this.scene.cameras.main.fadeOut(this.transitionDuration, 0, 0, 0);
 
-    // After fade out, load new room
+    // After fade out, load new room backgrounds
     this.scene.time.delayedCall(this.transitionDuration, () => {
-      // Load new room
-      this.currentRoomIndex = this.currentLevel!.rooms.findIndex(r => r.id === nextRoom.id);
+      console.log(`[RoomManager] Loading room backgrounds for ${nextRoom.id}`);
+      
+      // Load new room (this will set up backgrounds and camera bounds)
       this.loadRoom(nextRoom, false);
 
       // Fade in new room
@@ -474,9 +525,12 @@ export class RoomManager {
       this.scene.time.delayedCall(this.transitionDuration, () => {
         this.transitionInProgress = false;
         
-        // Emit transition complete event
+        console.log(`[RoomManager] Transition complete: ${fromRoomId} -> ${nextRoom.id}`);
+        console.log(`[RoomManager] Current room is now: ${this.currentRoom?.id}`);
+        
+        // Emit transition complete event (player position already updated)
         this.scene.events.emit('roomTransitionComplete', {
-          fromRoomId: this.currentRoom?.id,
+          fromRoomId: fromRoomId,
           toRoomId: nextRoom.id,
           playerX: newX,
           playerY: newY

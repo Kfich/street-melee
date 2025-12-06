@@ -32,6 +32,7 @@ import { StoryManager, LevelTransitionSystem, DialogueSystem, NarrativeSystem } 
 import { STORY_REGISTRY } from '../../systems/story/StoryData';
 import { CutsceneTriggerSystem } from '../../systems/story/CutsceneTriggerSystem';
 import { SCENE_TO_LEVEL_MAP } from '../../config/GameScenes';
+import { BossSceneManager } from '../../systems/boss/BossSceneManager';
 
 export class GameScene extends Phaser.Scene {
   private players: Player[] = [];
@@ -68,6 +69,7 @@ export class GameScene extends Phaser.Scene {
   private narrativeSystem!: NarrativeSystem;
   private currentLevelIndex: number = 0;
   private cutsceneTriggerSystem!: CutsceneTriggerSystem;
+  private bossSceneManager!: BossSceneManager;
   private isInitialized: boolean = false; // Track if game is fully initialized
 
   constructor() {
@@ -87,12 +89,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   create() {
-    console.log('GameScene: create() called');
     const { width, height } = this.cameras.main;
 
     try {
       // Initialize systems
-      console.log('GameScene: Initializing systems...');
       this.animationSystem = new AnimationSystem(this);
       this.combatSystem = new CombatSystem(this);
       this.comboSystem = new ComboSystem(this);
@@ -123,6 +123,7 @@ export class GameScene extends Phaser.Scene {
     this.dialogueSystem = new DialogueSystem(this.storyManager);
     this.narrativeSystem = new NarrativeSystem(this.storyManager);
     this.cutsceneTriggerSystem = new CutsceneTriggerSystem(this.storyManager);
+    this.bossSceneManager = new BossSceneManager(this);
     
     // Initialize multiplayer if enabled
     this.isMultiplayer = this.data.get('isMultiplayer') || false;
@@ -219,12 +220,9 @@ export class GameScene extends Phaser.Scene {
       color: '#cccccc'
     });
     
-    console.log('GameScene: Initialization complete!');
-    
     // Mark as initialized after a short delay to ensure all systems are ready
     this.time.delayedCall(500, () => {
       this.isInitialized = true;
-      console.log('GameScene: Fully initialized, game over checks enabled');
     });
     } catch (error) {
       console.error('GameScene: Error during initialization:', error);
@@ -323,11 +321,72 @@ export class GameScene extends Phaser.Scene {
           }
         });
       }
+      
+      // Check and spawn boss for this room if needed (with delay to ensure room is fully loaded)
+      if (this.bossSceneManager) {
+        this.time.delayedCall(300, () => {
+          const roomMatch = data.roomId.match(/level(\d+)_room(\d+)/);
+          if (roomMatch) {
+            const levelNum = parseInt(roomMatch[1], 10);
+            const roomNum = parseInt(roomMatch[2], 10);
+            this.bossSceneManager.checkAndSpawnBoss(levelNum, roomNum);
+          }
+        });
+      }
+    });
+
+    // Handle room transition start - update player position IMMEDIATELY
+    this.events.on('roomTransitionStart', (data: { fromRoomId?: string; toRoomId: string; playerX: number; playerY: number }) => {
+      console.log(`[GameScene] Room transition starting: ${data.fromRoomId} -> ${data.toRoomId}`);
+      
+      // Clean up bosses from previous room
+      if (this.bossSceneManager && data.fromRoomId) {
+        const fromRoomMatch = data.fromRoomId.match(/level(\d+)_room(\d+)/);
+        if (fromRoomMatch) {
+          const levelNum = parseInt(fromRoomMatch[1], 10);
+          const roomNum = parseInt(fromRoomMatch[2], 10);
+          this.bossSceneManager.cleanupBossesForScene(levelNum, roomNum);
+        }
+      }
+      
+      // Update player position IMMEDIATELY when transition starts
+      // This prevents the player from being at the exit when the new room loads
+      if (this.players[0] && data.playerX !== undefined && data.playerY !== undefined) {
+        // Set player position immediately to prevent re-triggering
+        this.players[0].sprite.setPosition(data.playerX, data.playerY);
+        
+        // Reset player velocity to prevent drift
+        if (this.players[0].sprite.body) {
+          const body = this.players[0].sprite.body as Phaser.Physics.Arcade.Body;
+          body.setVelocity(0, 0);
+        }
+        
+        console.log(`[GameScene] Player positioned at (${data.playerX}, ${data.playerY}) in room ${data.toRoomId}`);
+      }
     });
 
     this.events.on('roomTransitionComplete', (data: { fromRoomId?: string; toRoomId: string; playerX: number; playerY: number }) => {
       console.log(`[GameScene] Room transition complete: ${data.fromRoomId} -> ${data.toRoomId}`);
-      // Player position is already updated by RoomManager
+      
+      // Update camera and physics bounds after room is fully loaded
+      if (this.players[0]) {
+        // Update camera to follow player in new room
+        this.cameras.main.startFollow(this.players[0].sprite);
+        
+        // Update physics world bounds for new room (including vertical bounds)
+        const newRoomWidth = this.roomManager.getRoomWidth();
+        const newRoomHeight = this.roomManager.getRoomHeight() || this.cameras.main.height;
+        this.physics.world.setBounds(0, 0, newRoomWidth, newRoomHeight);
+        
+        // Update ground to match new room width (keep 200px height range)
+        if (this.ground) {
+          const groundHeight = 200;
+          const groundY = newRoomHeight - (groundHeight / 2);
+          this.ground.setSize(newRoomWidth, groundHeight);
+          this.ground.setPosition(newRoomWidth / 2, groundY);
+          (this.ground.body as Phaser.Physics.Arcade.Body).setSize(newRoomWidth, groundHeight);
+        }
+      }
     });
 
     this.events.on('levelStarted', (data: { levelId: string; levelName: string; roomId: string }) => {
@@ -352,6 +411,11 @@ export class GameScene extends Phaser.Scene {
 
     // Listen for boss spawns
     this.events.on('bossSpawned', (boss: Boss) => {
+      // Check if boss is already in the list (prevent duplicates)
+      if (this.bosses.includes(boss)) {
+        return;
+      }
+
       this.bosses.push(boss);
       this.entityManager.add(boss);
       boss.sprite.setData('entity', boss);
@@ -363,16 +427,19 @@ export class GameScene extends Phaser.Scene {
       
       this.physics.add.collider(boss.sprite, this.ground);
       
-      // Show boss health bar
-      if (!this.bossHealthBar) {
-        this.bossHealthBar = new BossHealthBar(this);
-      }
-      // Defer setting boss to ensure scene is fully ready
-      this.time.delayedCall(16, () => {
-        if (this.bossHealthBar && boss) {
-          this.bossHealthBar.setBoss(boss);
+      // Show boss health bar (only for combat bosses)
+      const isCombat = boss.sprite.getData('isCombat') !== false; // Default to true if not set
+      if (isCombat) {
+        if (!this.bossHealthBar) {
+          this.bossHealthBar = new BossHealthBar(this);
         }
-      });
+        // Defer setting boss to ensure scene is fully ready
+        this.time.delayedCall(16, () => {
+          if (this.bossHealthBar && boss) {
+            this.bossHealthBar.setBoss(boss);
+          }
+        });
+      }
       
       // Trigger boss dialogue if available (with small delay to ensure boss is fully spawned)
       if (this.dialogueSystem && this.storyManager) {
@@ -386,6 +453,20 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
+    // Listen for boss destruction
+    this.events.on('bossDestroyed', (boss: Boss) => {
+      // Remove from bosses array
+      this.bosses = this.bosses.filter(b => b !== boss);
+      
+      // Remove from entity manager
+      this.entityManager.remove(boss);
+      
+      // Clear boss health bar if this was the active boss
+      if (this.bossHealthBar) {
+        this.bossHealthBar.clearBoss();
+      }
+    });
+
     // Listen for enemy defeats
     this.events.on('entityDefeated', (entity: BaseEntity) => {
       if (entity.sprite.getData('isEnemy')) {
@@ -393,6 +474,29 @@ export class GameScene extends Phaser.Scene {
         const waveNumber = entity.sprite.getData('waveNumber');
         if (this.levelManager && enemyId) {
           this.levelManager.onEnemyDefeated(enemyId, waveNumber);
+        }
+        
+        // Remove enemy from array and destroy sprite
+        const enemyIndex = this.enemies.findIndex(e => e === entity);
+        if (enemyIndex > -1) {
+          const enemy = this.enemies[enemyIndex];
+          
+          // Clean up enemy shadow
+          if (this.enemyShadows.has(enemy)) {
+            const shadow = this.enemyShadows.get(enemy);
+            if (shadow) {
+              shadow.destroy();
+            }
+            this.enemyShadows.delete(enemy);
+          }
+          
+          // Destroy enemy sprite
+          if (enemy && enemy.sprite) {
+            enemy.sprite.destroy();
+          }
+          
+          // Remove from array
+          this.enemies.splice(enemyIndex, 1);
         }
       }
     });
@@ -687,16 +791,31 @@ export class GameScene extends Phaser.Scene {
     });
 
     // Listen for damage events to create visual effects
-    this.events.on('entityDamaged', (data: { entity: any; damage: number; x: number; y: number; isHeavy?: boolean; isKnockdown?: boolean }) => {
+    this.events.on('entityDamaged', (data: { entity: any; damage: number; x: number; y: number; isHeavy?: boolean; isKnockdown?: boolean; playerIndex?: number }) => {
       const isHeavy = data.isHeavy || data.damage >= 25;
       const isEnemy = data.entity?.sprite?.getData('isEnemy');
       
-      this.visualEffects.createHitMark(data.x, data.y, data.damage, isHeavy);
-      this.visualEffects.createSmoke(data.x, data.y);
+      // Get combo count for damage multiplier display
+      let comboMultiplier = 1;
+      if (data.playerIndex !== undefined && this.currentComboCounts.has(data.playerIndex)) {
+        const comboCount = this.currentComboCounts.get(data.playerIndex) || 0;
+        // Show multiplier for combos of 3 or more
+        if (comboCount >= 3) {
+          comboMultiplier = Math.min(1 + (comboCount - 2) * 0.1, 2.0); // Cap at 2x
+        }
+      }
       
-      // Blood particles for enemy hits
+      this.visualEffects.createHitMark(data.x, data.y, data.damage, isHeavy);
+      // Enhanced damage number with combo multiplier
+      this.visualEffects.createDamageNumber(data.x, data.y - 25, data.damage, isHeavy, comboMultiplier);
+      // Reduced smoke - only for heavy hits
+      if (isHeavy) {
+        this.visualEffects.createSmoke(data.x, data.y);
+      }
+      
+      // Blood particles for enemy hits (reduced)
       if (isEnemy) {
-        this.visualEffects.createBloodParticles(data.x, data.y, isHeavy ? 8 : 4);
+        this.visualEffects.createBloodParticles(data.x, data.y, isHeavy ? 4 : 2); // Reduced from 8/4
       }
       
       // Impact effect for knockdowns and heavy hits
@@ -1051,33 +1170,27 @@ export class GameScene extends Phaser.Scene {
     // For now, always show intro (can add option to skip if already viewed later)
     // Show main game intro
     const introCutscene = this.storyManager.getCutscene('intro_game');
-    console.log('[GameScene] Intro cutscene retrieved:', introCutscene ? introCutscene.id : 'null');
     
     if (introCutscene) {
-      console.log('[GameScene] Playing intro cutscene');
       this.storyManager.playCutscene(introCutscene);
       
       // After intro completes, check for scene 1 intro or narrative
       this.events.once('cutsceneEnded', () => {
-        console.log('[GameScene] Intro cutscene ended');
         // Ensure scene index is set to 1 (0-based = 0) for intro_scene_1 condition
         this.storyManager.setSceneIndex(0); // 0-based index = scene 1 (1-based)
         // Check for scene 1 specific intro
         const scene1Intro = this.storyManager.getCutscene('intro_scene_1');
         if (scene1Intro && !this.storyManager.getFlag('intro_viewed')) {
-          console.log('[GameScene] Playing scene 1 intro');
           this.storyManager.playCutscene(scene1Intro);
           this.events.once('cutsceneEnded', () => {
             this.narrativeSystem.checkAndTriggerNarrative(this.currentLevelIndex);
           });
         } else {
-          console.log('[GameScene] Skipping scene 1 intro (already viewed or not found)');
           // No scene 1 intro, just show narrative
           this.narrativeSystem.checkAndTriggerNarrative(this.currentLevelIndex);
         }
       });
     } else {
-      console.warn('[GameScene] No intro cutscene found!');
       // No intro cutscene, just show narrative
       this.narrativeSystem.checkAndTriggerNarrative(this.currentLevelIndex);
     }
@@ -1145,18 +1258,17 @@ export class GameScene extends Phaser.Scene {
     for (const [sceneNumStr, sceneMap] of Object.entries(SCENE_TO_LEVEL_MAP)) {
       const sceneMapTyped = sceneMap as { level: number; room: number; name: string };
       if (sceneMapTyped.level === levelNum && sceneMapTyped.room === roomNum) {
-        const sceneNumber = parseInt(sceneNumStr, 10);
-        if (this.cutsceneTriggerSystem.getSceneNumber() !== sceneNumber) {
-          this.cutsceneTriggerSystem.setSceneNumber(sceneNumber);
-          console.log(`[GameScene] Scene updated to ${sceneNumber}: ${sceneMapTyped.name}`);
-          
-          // Check for automatic triggers when scene changes
-          this.time.delayedCall(100, () => {
-            if (this.cutsceneTriggerSystem) {
-              this.cutsceneTriggerSystem.checkAutomaticTriggers();
+            const sceneNumber = parseInt(sceneNumStr, 10);
+            if (this.cutsceneTriggerSystem.getSceneNumber() !== sceneNumber) {
+              this.cutsceneTriggerSystem.setSceneNumber(sceneNumber);
+              
+              // Check for automatic triggers when scene changes
+              this.time.delayedCall(100, () => {
+                if (this.cutsceneTriggerSystem) {
+                  this.cutsceneTriggerSystem.checkAutomaticTriggers();
+                }
+              });
             }
-          });
-        }
         break;
       }
     }
@@ -1337,25 +1449,12 @@ export class GameScene extends Phaser.Scene {
       // Update background layers
       this.roomManager.update(cameraX, cameraY);
       
-      // Check for room transitions
+      // Check for room transitions (only if not already transitioning)
       const transition = this.roomManager.checkRoomTransition(playerX, playerY);
-      if (transition.transition && transition.newX !== undefined && transition.newY !== undefined) {
-        // Move player to new room position
-        this.players[0].sprite.setPosition(transition.newX, transition.newY);
-        
-        // Update physics world bounds for new room (including vertical bounds)
-        const newRoomWidth = this.roomManager.getRoomWidth();
-        const newRoomHeight = this.roomManager.getRoomHeight() || this.cameras.main.height;
-        this.physics.world.setBounds(0, 0, newRoomWidth, newRoomHeight);
-        
-        // Update ground to match new room width (keep 200px height range)
-        if (this.ground) {
-          const groundHeight = 200;
-          const groundY = newRoomHeight - (groundHeight / 2);
-          this.ground.setSize(newRoomWidth, groundHeight);
-          this.ground.setPosition(newRoomWidth / 2, groundY);
-          (this.ground.body as Phaser.Physics.Arcade.Body).setSize(newRoomWidth, groundHeight);
-        }
+      if (transition.transition) {
+        // Transition will be handled by RoomManager
+        // Player position will be updated in roomTransitionComplete event
+        // This prevents immediate re-triggering
       }
     }
 
@@ -1401,21 +1500,42 @@ export class GameScene extends Phaser.Scene {
       });
     }
 
-    // Update bosses
-    if (this.bosses) {
+    // Update bosses (get from boss scene manager to ensure we have all active bosses)
+    // This ensures we only update bosses that are actually spawned by BossSceneManager
+    if (this.bossSceneManager) {
+      const activeBosses = this.bossSceneManager.getActiveBosses();
+      // Update boss list to match active bosses from manager
+      // Filter out any bosses not managed by BossSceneManager
       this.bosses = this.bosses.filter(boss => {
-        if (boss && boss.sprite && boss.sprite.active) {
-          try {
-            boss.update();
-          } catch (error) {
-            console.warn('[GameScene] Error updating boss:', error);
-            return false;
-          }
-          return true;
+        // Keep boss if it's in the active bosses list
+        return activeBosses.includes(boss);
+      });
+      
+      // Add any new bosses from manager
+      activeBosses.forEach(boss => {
+        if (!this.bosses.includes(boss)) {
+          this.bosses.push(boss);
         }
-        return false;
       });
     }
+    
+    // Update each boss
+    this.bosses.forEach(boss => {
+      if (boss && boss.sprite && boss.sprite.active) {
+        try {
+          boss.update();
+          // Update depth based on Y position
+          boss.sprite.setDepth(boss.sprite.y);
+        } catch (error) {
+          console.warn('[GameScene] Error updating boss:', error);
+        }
+      }
+    });
+    
+    // Clean up any destroyed bosses from the list
+    this.bosses = this.bosses.filter(boss => 
+      boss && boss.sprite && boss.sprite.active
+    );
 
     // Update boss health bar
     if (this.bossHealthBar) {

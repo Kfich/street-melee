@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { Enemy, EnemyType } from '../../entities/enemies/Enemy';
 import { Weapon, WeaponType } from '../../entities/weapons/Weapon';
 import { Item, ItemType } from '../../entities/items/Item';
-import { Boss, BossType } from '../../entities/bosses/Boss';
+// Boss spawning is now handled by BossSceneManager
 
 export interface SpawnPoint {
   x: number;
@@ -11,7 +11,7 @@ export interface SpawnPoint {
   enemyType?: EnemyType;
   weaponType?: WeaponType;
   itemType?: ItemType;
-  bossType?: BossType;
+  bossType?: string; // Boss spawning is now handled by BossSceneManager, this is kept for compatibility
   delay?: number; // Spawn delay in ms
   active: boolean;
   wave?: number; // Wave number for wave-based spawning
@@ -187,17 +187,9 @@ export class LevelManager {
         }
         break;
       case 'boss':
-        if (spawnPoint.bossType) {
-          const boss = new Boss(
-            this.scene,
-            spawnPoint.x,
-            spawnPoint.y,
-            spawnPoint.bossType
-          );
-          boss.sprite.setData('entity', boss);
-          boss.sprite.setData('isBoss', true);
-          this.scene.events.emit('bossSpawned', boss);
-        }
+        // Boss spawning is now handled by BossSceneManager
+        // Skip boss spawn points to prevent duplicate spawning
+        console.log(`[LevelManager] Skipping boss spawn point - bosses are managed by BossSceneManager`);
         break;
     }
   }

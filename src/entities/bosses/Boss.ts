@@ -112,9 +112,18 @@ export class Boss extends BaseEntity {
   private attackPatternCooldown: number = 0;
   private invincibilityFrames: number = 0;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, bossType: BossType = 'blizz') {
+  constructor(scene: Phaser.Scene, x: number, y: number, bossType: BossType) {
     const stats = BOSS_STATS[bossType];
-    super(scene, x, y, `${stats.spriteKey}_idle_left`); // Use boss-specific sprite
+    const initialSpriteKey = `${stats.spriteKey}_idle_left`;
+    
+    // Use boss-specific sprite, or fallback if it doesn't exist
+    const spriteKey = scene.textures.exists(initialSpriteKey) ? initialSpriteKey : 'blizz_idle_left';
+    if (!scene.textures.exists(initialSpriteKey)) {
+      console.warn(`[Boss] Sprite ${initialSpriteKey} not found for boss type ${bossType}, using fallback`);
+    }
+    
+    super(scene, x, y, spriteKey);
+    
     this.bossType = bossType;
     this.stats = stats;
     this.maxHealth = this.stats.health;
@@ -123,6 +132,11 @@ export class Boss extends BaseEntity {
     if (this.stats.canAttack) {
       this.initializePhases();
     }
+    
+    // Ensure sprite is visible
+    this.sprite.setVisible(true);
+    this.sprite.setActive(true);
+    console.log(`[Boss] Created ${bossType} boss at (${x}, ${y}) with sprite ${this.sprite.texture.key}`);
   }
 
   private setupBoss() {
@@ -193,6 +207,11 @@ export class Boss extends BaseEntity {
    * Update boss AI and behavior
    */
   update(): void {
+    // Safety check: don't update if sprite is destroyed or inactive
+    if (!this.sprite || !this.sprite.active || !this.sprite.body) {
+      return;
+    }
+
     this.checkGrounded();
     this.updatePhase();
     this.updateAI();
@@ -313,10 +332,20 @@ export class Boss extends BaseEntity {
    * Update boss AI behavior
    */
   private updateAI(): void {
+    // Safety check: ensure sprite and body exist
+    if (!this.sprite || !this.sprite.active || !this.sprite.body) {
+      return;
+    }
+
+    const body = this.sprite.body as Phaser.Physics.Arcade.Body;
+    if (!body) {
+      return;
+    }
+
     // Non-attacking bosses just stay idle
     if (!this.stats.canAttack) {
       this.aiState = 'idle';
-      this.sprite.setVelocityX(0);
+      body.setVelocityX(0);
       return;
     }
 
@@ -413,9 +442,17 @@ export class Boss extends BaseEntity {
    */
   private pursueTarget(speed: number): void {
     if (!this.target) return;
+    
+    // Safety check: ensure sprite and body exist
+    if (!this.sprite || !this.sprite.active || !this.sprite.body) {
+      return;
+    }
 
     this.aiState = 'pursue';
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
+    if (!body) {
+      return;
+    }
     
     const dx = this.target.sprite.x - this.sprite.x;
     // Update facing direction (don't flip sprite - directional textures handle direction)
@@ -530,8 +567,17 @@ export class Boss extends BaseEntity {
    */
   private chargeAttack(damage: number): void {
     if (!this.target) return;
+    
+    // Safety check: ensure sprite and body exist
+    if (!this.sprite || !this.sprite.active || !this.sprite.body) {
+      return;
+    }
 
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
+    if (!body) {
+      return;
+    }
+    
     const chargeSpeed = this.stats.speed * 2.5 * this.phases[this.currentPhase].speedMultiplier;
     const direction = this.target.sprite.x > this.sprite.x ? 1 : -1;
 
@@ -556,7 +602,13 @@ export class Boss extends BaseEntity {
 
     // Stop charge after duration
     this.scene.time.delayedCall(800, () => {
-      body.setVelocityX(0);
+      // Safety check: ensure sprite and body still exist
+      if (this.sprite && this.sprite.active && this.sprite.body) {
+        const body = this.sprite.body as Phaser.Physics.Arcade.Body;
+        if (body) {
+          body.setVelocityX(0);
+        }
+      }
       if (this.currentHitbox) {
         this.currentHitbox.deactivate();
         this.currentHitbox = undefined;

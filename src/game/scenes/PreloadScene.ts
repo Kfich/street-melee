@@ -303,6 +303,15 @@ export class PreloadScene extends Phaser.Scene {
     this.load.image('tony_walk_right_2', 'assets/sprites/imgs/Blizz/BR2.gif');
     this.load.image('tony_walk_right_3', 'assets/sprites/imgs/Blizz/BR3.gif');
     this.load.image('tony_attack_right', 'assets/sprites/imgs/Blizz/BRA.gif');
+
+    // Load Police sprites (attacking boss)
+    // Using police enemy sprites for police boss
+    this.load.image('police_idle_left', 'assets/sprites/imgs/police/police-left.gif');
+    this.load.image('police_idle_right', 'assets/sprites/imgs/police/police-right.gif');
+    this.load.image('police_walk_left', 'assets/sprites/imgs/police/police-walk-left.gif');
+    this.load.image('police_walk_right', 'assets/sprites/imgs/police/police-walk-right.gif');
+    this.load.image('police_attack_left', 'assets/sprites/imgs/police/police-left.gif'); // Using idle for attack
+    this.load.image('police_attack_right', 'assets/sprites/imgs/police/police-right.gif'); // Using idle for attack
   }
 
   /**

@@ -23,63 +23,73 @@ export class VisualEffects {
    * Create hit mark effect with enhanced visuals
    */
   createHitMark(x: number, y: number, damage: number, isHeavy: boolean = false) {
-    // Create impact flash
-    const flashSize = isHeavy ? 12 : 8;
-    const flash = this.scene.add.circle(x, y, flashSize, 0xffffff, 0.8);
+    // Create subtle impact flash (reduced intensity)
+    const flashSize = isHeavy ? 8 : 5;
+    const flash = this.scene.add.circle(x, y, flashSize, 0xffffff, 0.4); // Reduced from 0.8 to 0.4
     flash.setDepth(999);
     
     this.scene.tweens.add({
       targets: flash,
-      scale: isHeavy ? 3 : 2,
+      scale: isHeavy ? 2 : 1.5, // Reduced from 3/2
       alpha: 0,
-      duration: 150,
+      duration: 100, // Faster, less noticeable
       onComplete: () => {
         flash.destroy();
       }
     });
 
-    // Create X mark with color based on damage
+    // Create subtle X mark (reduced size and opacity)
     const hitMarkColor = isHeavy ? 0xff00ff : 0xffff00;
     const hitMark = this.scene.add.graphics();
-    hitMark.lineStyle(isHeavy ? 4 : 3, hitMarkColor, 1);
-    const markSize = isHeavy ? 12 : 8;
+    hitMark.lineStyle(isHeavy ? 2 : 1.5, hitMarkColor, 0.6); // Reduced opacity from 1 to 0.6
+    const markSize = isHeavy ? 8 : 5; // Reduced from 12/8
     hitMark.lineBetween(x - markSize, y - markSize, x + markSize, y + markSize);
     hitMark.lineBetween(x + markSize, y - markSize, x - markSize, y + markSize);
     hitMark.setDepth(999);
     
-    // Fade out
+    // Fade out faster
     this.scene.tweens.add({
       targets: hitMark,
       alpha: 0,
-      duration: 200,
+      duration: 150, // Reduced from 200
       onComplete: () => {
         hitMark.destroy();
       }
     });
 
-    // Create spark particles with intensity based on hit type
+    // Create fewer spark particles
     const sparkIntensity = isHeavy ? 'heavy' : damage >= 15 ? 'medium' : 'light';
-    const direction = 1; // Default direction (can be improved later)
+    const direction = 1;
     this.createHitSparks(x, y, direction, sparkIntensity);
 
-    // Always show damage number
-    this.createDamageNumber(x, y - 25, damage);
-
-    // Hit stop for heavy hits
+    // Hit stop for heavy hits (reduced duration)
     if (isHeavy && damage >= 25) {
-      this.hitStop(50);
+      this.hitStop(30); // Reduced from 50
     }
   }
 
   /**
-   * Create damage number popup (improved styling)
+   * Create damage number popup with enhanced styling and critical hit indicators
+   * @param x - X position
+   * @param y - Y position
+   * @param damage - Damage amount
+   * @param isCritical - Whether this is a critical hit
+   * @param comboMultiplier - Combo multiplier (1.0 = no multiplier)
    */
-  private createDamageNumber(x: number, y: number, damage: number) {
-    // Determine color and size based on damage
+  createDamageNumber(x: number, y: number, damage: number, isCritical: boolean = false, comboMultiplier: number = 1) {
+    // Determine if this is a critical hit (high damage or special conditions)
+    const isCrit = isCritical || damage >= 30;
+    
+    // Determine color and size based on damage and critical status
     let color = '#ff0000'; // Red for normal damage
     let fontSize = '18px';
+    let prefix = '';
     
-    if (damage >= 30) {
+    if (isCrit) {
+      color = '#ff00ff'; // Purple for critical hits
+      fontSize = '28px';
+      prefix = 'CRIT! ';
+    } else if (damage >= 30) {
       color = '#ff00ff'; // Purple for high damage
       fontSize = '24px';
     } else if (damage >= 20) {
@@ -90,25 +100,48 @@ export class VisualEffects {
       fontSize = '16px';
     }
 
-    const text = this.scene.add.text(x, y, damage.toString(), {
+    // Build damage text with combo multiplier if applicable
+    let damageText = damage.toString();
+    if (comboMultiplier > 1) {
+      damageText = `${damage} x${comboMultiplier}`;
+    }
+    damageText = prefix + damageText;
+
+    const text = this.scene.add.text(x, y, damageText, {
       fontSize: fontSize,
       color: color,
       stroke: '#000000',
-      strokeThickness: 3,
+      strokeThickness: isCrit ? 4 : 3,
       fontStyle: 'bold',
-      fontFamily: 'Arial'
+      fontFamily: '"Press Start 2P", "Courier New", monospace'
     });
     
     text.setOrigin(0.5);
     text.setDepth(1000);
     
+    // More dramatic animation for critical hits
+    const animDistance = isCrit ? 60 : 40;
+    const animScale = isCrit ? 1.5 : 1.2;
+    const animDuration = isCrit ? 800 : 600;
+    
+    // Initial pop effect for critical hits
+    if (isCrit) {
+      text.setScale(0.5);
+      this.scene.tweens.add({
+        targets: text,
+        scale: animScale,
+        duration: 150,
+        ease: 'Back.easeOut'
+      });
+    }
+    
     // Animate upward with slight arc and fade
     this.scene.tweens.add({
       targets: text,
-      y: y - 40,
-      x: x + (Math.random() - 0.5) * 20, // Slight horizontal drift
-      scale: 1.2,
-      duration: 600,
+      y: y - animDistance,
+      x: x + (Math.random() - 0.5) * (isCrit ? 30 : 20), // More drift for crits
+      scale: animScale,
+      duration: animDuration,
       ease: 'Power2',
       onComplete: () => {
         text.destroy();
@@ -119,24 +152,33 @@ export class VisualEffects {
     this.scene.tweens.add({
       targets: text,
       alpha: 0,
-      duration: 600,
-      delay: 200
+      duration: animDuration,
+      delay: isCrit ? 300 : 200
     });
+    
+    // Rotation effect for critical hits
+    if (isCrit) {
+      this.scene.tweens.add({
+        targets: text,
+        angle: (Math.random() > 0.5 ? 1 : -1) * 15,
+        duration: animDuration,
+        ease: 'Power2'
+      });
+    }
   }
 
   /**
-   * Create smoke effect (placeholder - using simple graphics instead of particles)
+   * Create smoke effect (toned down)
    */
   createSmoke(x: number, y: number) {
-    // Use simple graphics as placeholder instead of particle system
-    // In production, this would use proper particle emitters
-    for (let i = 0; i < 5; i++) {
+    // Reduced particle count from 5 to 2
+    for (let i = 0; i < 2; i++) {
       const smoke = this.scene.add.circle(
-        x + (Math.random() - 0.5) * 20,
-        y + (Math.random() - 0.5) * 20,
-        3 + Math.random() * 3,
+        x + (Math.random() - 0.5) * 15, // Smaller spread
+        y + (Math.random() - 0.5) * 15,
+        2 + Math.random() * 2, // Smaller particles
         0x888888,
-        0.5
+        0.3 // Reduced opacity from 0.5
       );
       
       this.scene.tweens.add({
@@ -248,16 +290,18 @@ export class VisualEffects {
   }
 
   /**
-   * Flash screen with color options
+   * Flash screen with color options (toned down)
    */
   flashScreen(color: number = 0xffffff, duration: number = 100, intensity: number = 0.5) {
+    // Reduce intensity by 60%
+    const reducedIntensity = intensity * 0.4;
     const flash = this.scene.add.rectangle(
       this.scene.cameras.main.centerX,
       this.scene.cameras.main.centerY,
       this.scene.cameras.main.width,
       this.scene.cameras.main.height,
       color,
-      intensity
+      reducedIntensity
     );
     
     flash.setDepth(1000);
@@ -266,7 +310,7 @@ export class VisualEffects {
     this.scene.tweens.add({
       targets: flash,
       alpha: 0,
-      duration,
+      duration: duration * 0.7, // Faster fade
       ease: 'Power2',
       onComplete: () => {
         flash.destroy();
@@ -275,18 +319,18 @@ export class VisualEffects {
   }
 
   /**
-   * Flash effect for special moves
+   * Flash effect for special moves (toned down)
    */
   flashSpecialMove(x: number, y: number, color: number = 0x00ffff) {
-    // Create radial flash at position
-    const flash = this.scene.add.circle(x, y, 0, color, 0.8);
+    // Create subtle radial flash at position
+    const flash = this.scene.add.circle(x, y, 0, color, 0.3); // Reduced from 0.8 to 0.3
     flash.setDepth(999);
     
     this.scene.tweens.add({
       targets: flash,
-      radius: 100,
+      radius: 60, // Reduced from 100
       alpha: 0,
-      duration: 300,
+      duration: 200, // Faster, less noticeable
       ease: 'Power2',
       onComplete: () => {
         flash.destroy();
@@ -307,16 +351,17 @@ export class VisualEffects {
       const intensity = (typeof directionOrCount === 'string' ? directionOrCount : intensityOrColor) as 'light' | 'medium' | 'heavy' || 'medium';
       const direction = (typeof directionOrCount === 'number' ? directionOrCount : 1) as number;
       
-      const count = intensity === 'light' ? 4 : intensity === 'medium' ? 8 : 12;
+      // Reduced particle counts (50% reduction)
+      const count = intensity === 'light' ? 2 : intensity === 'medium' ? 4 : 6;
       const color = intensity === 'heavy' ? 0xffaa00 : 0xffff00; // Orange for heavy, yellow for others
       
       for (let i = 0; i < count; i++) {
         const spark = this.scene.add.circle(
           x,
           y,
-          1 + Math.random() * 2,
+          1 + Math.random() * 1.5, // Smaller particles
           color,
-          0.9
+          0.6 // Reduced opacity from 0.9
         );
         spark.setDepth(998);
         
@@ -364,37 +409,36 @@ export class VisualEffects {
   }
 
   /**
-   * Create impact effect for knockdowns and heavy hits
+   * Create impact effect for knockdowns and heavy hits (toned down)
    */
   createImpactEffect(x: number, y: number, isHeavy: boolean = false) {
-    // Large impact circle
-    const impact = this.scene.add.circle(x, y, 0, 0xffffff, 0.6);
+    // Smaller, more subtle impact circle
+    const impact = this.scene.add.circle(x, y, 0, 0xffffff, 0.3); // Reduced from 0.6
     impact.setDepth(997);
     
-    const maxRadius = isHeavy ? 80 : 50;
+    const maxRadius = isHeavy ? 50 : 30; // Reduced from 80/50
     
     this.scene.tweens.add({
       targets: impact,
       radius: maxRadius,
       alpha: 0,
-      duration: isHeavy ? 400 : 300,
+      duration: isHeavy ? 250 : 200, // Faster
       ease: 'Power2',
       onComplete: () => {
         impact.destroy();
       }
     });
 
-    // Create shockwave rings
-    for (let i = 0; i < 2; i++) {
-      const ring = this.scene.add.circle(x, y, 0, 0xffffff, 0.4);
+    // Create fewer shockwave rings (only for heavy hits)
+    if (isHeavy) {
+      const ring = this.scene.add.circle(x, y, 0, 0xffffff, 0.2); // Reduced opacity
       ring.setDepth(996);
       
       this.scene.tweens.add({
         targets: ring,
-        radius: maxRadius * (1.5 + i * 0.5),
+        radius: maxRadius * 1.3,
         alpha: 0,
-        duration: (isHeavy ? 400 : 300) + i * 100,
-        delay: i * 50,
+        duration: 250,
         ease: 'Power2',
         onComplete: () => {
           ring.destroy();
@@ -402,11 +446,11 @@ export class VisualEffects {
       });
     }
 
-    // Screen shake based on impact
+    // Reduced screen shake
     if (isHeavy) {
-      this.screenShakeHeavy(300);
+      this.screenShakeHeavy(200); // Reduced duration
     } else {
-      this.screenShakeMedium(200);
+      this.screenShakeMedium(150);
     }
   }
 
@@ -520,21 +564,23 @@ export class VisualEffects {
   }
 
   /**
-   * Create blood/impact particles for enemy hits
+   * Create blood/impact particles for enemy hits (toned down)
    */
   createBloodParticles(x: number, y: number, count: number = 6) {
-    for (let i = 0; i < count; i++) {
+    // Reduce particle count by 50%
+    const reducedCount = Math.max(1, Math.floor(count * 0.5));
+    for (let i = 0; i < reducedCount; i++) {
       const blood = this.scene.add.circle(
         x,
         y,
-        1 + Math.random() * 2,
+        1 + Math.random() * 1.5, // Smaller particles
         0xcc0000, // Dark red
-        0.8
+        0.5 // Reduced opacity from 0.8 to 0.5
       );
       blood.setDepth(998);
       
       const angle = Math.random() * Math.PI * 2;
-      const speed = 20 + Math.random() * 40;
+      const speed = 15 + Math.random() * 25; // Reduced speed
       
       this.scene.tweens.add({
         targets: blood,
@@ -542,7 +588,7 @@ export class VisualEffects {
         y: blood.y + Math.sin(angle) * speed,
         alpha: 0,
         scale: 0,
-        duration: 300,
+        duration: 250, // Faster fade
         onComplete: () => {
           blood.destroy();
         }

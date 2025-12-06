@@ -100,11 +100,20 @@ export function generateLevelRooms(levelNumber: number): RoomConfig[] {
   const roomImages = getLevelRoomImages(levelNumber);
   const rooms: RoomConfig[] = [];
 
-  roomImages.forEach(roomImage => {
+  // Sort room images by roomNumber to ensure correct order
+  const sortedRoomImages = [...roomImages].sort((a, b) => a.roomNumber - b.roomNumber);
+
+  sortedRoomImages.forEach(roomImage => {
     const room = generateRoomFromLevelImage(levelNumber, roomImage.roomNumber);
     if (room) {
       rooms.push(room);
     }
+  });
+
+  // Verify room progression
+  console.log(`[RoomConfig] Generated ${rooms.length} rooms for level ${levelNumber}:`);
+  rooms.forEach((room, index) => {
+    console.log(`  Room ${index + 1}: ${room.id} -> ${room.nextRoomId || 'END'}`);
   });
 
   return rooms;
