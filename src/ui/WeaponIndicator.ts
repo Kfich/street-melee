@@ -8,6 +8,8 @@ export class WeaponIndicator {
   private scene: Phaser.Scene;
   private icon?: Phaser.GameObjects.Rectangle;
   private text?: Phaser.GameObjects.Text;
+  private durabilityBar?: Phaser.GameObjects.Graphics;
+  private durabilityText?: Phaser.GameObjects.Text;
   private x: number;
   private y: number;
   // Removed unused weaponType property
@@ -37,12 +39,29 @@ export class WeaponIndicator {
     this.text.setOrigin(0, 0.5);
     this.text.setVisible(false);
     this.text.setDepth(1000);
+
+    // Durability bar (hidden initially)
+    this.durabilityBar = this.scene.add.graphics();
+    this.durabilityBar.setVisible(false);
+    this.durabilityBar.setDepth(1000);
+
+    // Durability text
+    this.durabilityText = this.scene.add.text(this.x + 20, this.y + 15, '', {
+      fontSize: '10px',
+      fontFamily: 'Arial',
+      color: '#ffff00',
+      stroke: '#000000',
+      strokeThickness: 1
+    });
+    this.durabilityText.setOrigin(0, 0.5);
+    this.durabilityText.setVisible(false);
+    this.durabilityText.setDepth(1000);
   }
 
   /**
    * Update weapon display
    */
-  updateWeapon(weaponType: WeaponType | null) {
+  updateWeapon(weaponType: WeaponType | null, throwCount?: number, maxThrows?: number) {
     if (weaponType && this.icon && this.text) {
       // Weapon colors
       const colors: Record<WeaponType, number> = {
@@ -64,8 +83,66 @@ export class WeaponIndicator {
       
       this.text.setText(names[weaponType]);
       this.text.setVisible(true);
+
+      // Update durability display if weapon has durability info
+      if (throwCount !== undefined && maxThrows !== undefined && maxThrows > 0) {
+        this.updateDurability(throwCount, maxThrows);
+      } else {
+        this.hideDurability();
+      }
     } else {
       this.hide();
+    }
+  }
+
+  /**
+   * Update durability display
+   */
+  private updateDurability(throwCount: number, maxThrows: number) {
+    if (!this.durabilityBar || !this.durabilityText) return;
+
+    const remaining = maxThrows - throwCount;
+    const durabilityRatio = remaining / maxThrows;
+
+    // Show durability bar
+    this.durabilityBar.clear();
+    this.durabilityBar.setVisible(true);
+
+    const barWidth = 60;
+    const barHeight = 4;
+    const barX = this.x + 20;
+    const barY = this.y + 15;
+
+    // Background (gray)
+    this.durabilityBar.fillStyle(0x333333, 0.8);
+    this.durabilityBar.fillRect(barX, barY - barHeight / 2, barWidth, barHeight);
+
+    // Durability fill (color based on remaining uses)
+    let durabilityColor = 0x00ff00; // Green
+    if (durabilityRatio < 0.33) {
+      durabilityColor = 0xff0000; // Red (low)
+    } else if (durabilityRatio < 0.66) {
+      durabilityColor = 0xffff00; // Yellow (medium)
+    }
+
+    this.durabilityBar.fillStyle(durabilityColor, 1);
+    this.durabilityBar.fillRect(barX, barY - barHeight / 2, barWidth * durabilityRatio, barHeight);
+
+    // Durability text
+    this.durabilityText.setText(`${remaining}/${maxThrows}`);
+    this.durabilityText.setColor(durabilityRatio < 0.33 ? '#ff0000' : durabilityRatio < 0.66 ? '#ffff00' : '#00ff00');
+    this.durabilityText.setVisible(true);
+  }
+
+  /**
+   * Hide durability display
+   */
+  private hideDurability() {
+    if (this.durabilityBar) {
+      this.durabilityBar.setVisible(false);
+    }
+    if (this.durabilityText) {
+      this.durabilityText.setVisible(false);
     }
   }
 
@@ -79,6 +156,7 @@ export class WeaponIndicator {
     if (this.text) {
       this.text.setVisible(false);
     }
+    this.hideDurability();
   }
 
   /**
@@ -104,6 +182,12 @@ export class WeaponIndicator {
     }
     if (this.text) {
       this.text.destroy();
+    }
+    if (this.durabilityBar) {
+      this.durabilityBar.destroy();
+    }
+    if (this.durabilityText) {
+      this.durabilityText.destroy();
     }
   }
 }

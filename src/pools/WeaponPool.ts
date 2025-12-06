@@ -38,10 +38,14 @@ export class WeaponPool {
 
   /**
    * Reset weapon state for reuse
+   * Note: This is called by the pool, but the weapon type is already set in the weapon
+   * We'll use the weapon's current type when resetting
    */
   private resetWeapon(weapon: Weapon): void {
     // Reset at (0, 0) - will be repositioned when acquired
-    weapon.reset(0, 0);
+    // Use the weapon's current type (it was set when created)
+    const weaponType = weapon.getWeaponType();
+    weapon.reset(0, 0, weaponType);
   }
 
   /**
@@ -57,7 +61,8 @@ export class WeaponPool {
     const weapon = pool.acquire();
     
     // Reset weapon to new position (this will reinitialize all state)
-    weapon.reset(x, y);
+    // Use the requested type (in case weapon was reused from different type pool)
+    weapon.reset(x, y, type);
     
     return weapon;
   }

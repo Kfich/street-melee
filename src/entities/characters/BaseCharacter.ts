@@ -40,6 +40,10 @@ export abstract class BaseCharacter extends BaseEntity {
   protected landingCooldown: number = 0; // Cooldown for landing animation
   protected knockdownCooldown: number = 0; // Cooldown for knockdown state
   protected invincibilityFrames: number = 0; // Invincibility frames after knockdown/get-up
+  protected airRecoveryCooldown: number = 0; // Cooldown for air recovery
+  protected isBlocking: boolean = false; // Whether character is currently blocking
+  protected blockCooldown: number = 0; // Cooldown between blocks
+  protected blockDuration: number = 0; // Remaining block duration
 
   constructor(
     scene: Phaser.Scene,
@@ -392,10 +396,23 @@ export abstract class BaseCharacter extends BaseEntity {
       this.scene.events.emit('jumpPerformed');
     }
 
+    // Air recovery (jump + special while in air, on cooldown)
+    if (input.jump && input.special && !this.isGrounded && this.airRecoveryCooldown <= 0) {
+      this.performAirRecovery();
+      return;
+    }
+
     // Jump attack (attack while in air)
     if (input.attack && !this.isGrounded && this.state === 'jumping' && this.canAttack()) {
       this.performJumpAttack();
       return; // Don't perform regular attack
+    }
+
+    // Block (hold special while on ground, not attacking)
+    if (input.special && this.isGrounded && !input.attack && this.blockCooldown <= 0) {
+      this.startBlocking();
+    } else if (!input.special && this.isBlocking) {
+      this.stopBlocking();
     }
 
     // Weapon drop/throw (double-tap direction + attack)
@@ -515,7 +532,38 @@ export abstract class BaseCharacter extends BaseEntity {
   }
 
   update(): void {
+    const wasInAirBefore = this.wasInAir;
     this.checkGrounded();
+    
+    // Detect landing (transition from air to ground)
+    if (wasInAirBefore && this.isGrounded && this.landingCooldown <= 0) {
+      this.onLanding();
+    }
+    
+    // Update wasInAir for next frame
+    this.wasInAir = !this.isGrounded;
+    
+    // Update landing cooldown
+    if (this.landingCooldown > 0) {
+      this.landingCooldown -= 16; // ~60fps
+    }
+    
+    // Update air recovery cooldown
+    if (this.airRecoveryCooldown > 0) {
+      this.airRecoveryCooldown -= 16; // ~60fps
+    }
+    
+    // Update block duration and cooldown
+    if (this.blockDuration > 0) {
+      this.blockDuration -= 16; // ~60fps
+      if (this.blockDuration <= 0) {
+        this.isBlocking = false;
+      }
+    }
+    if (this.blockCooldown > 0) {
+      this.blockCooldown -= 16; // ~60fps
+    }
+    
     this.updateState();
     this.updateAnimations();
     
@@ -540,6 +588,98 @@ export abstract class BaseCharacter extends BaseEntity {
     // Update grab position if grabbing
     if (this.grabSystem && this.grabSystem.isGrabbing(this)) {
       // Position is handled by grab system
+    }
+  }
+
+  /**
+   * Perform air recovery (recover from hit in air)
+   */
+  protected performAirRecovery(): void {
+    if (!this.sprite || !this.sprite.active) return;
+    
+    const body = this.sprite.body as Phaser.Physics.Arcade.Body;
+    if (!body) return;
+    
+    // Reset vertical velocity to stop falling
+    body.setVelocityY(-200); // Small upward boost
+    
+    // Set air recovery cooldown
+    this.airRecoveryCooldown = GameConfig.AIR_RECOVERY_COOLDOWN;
+    
+    // Emit recovery event for visual effects
+    this.scene.events.emit('airRecoveryPerformed', {
+      x: this.sprite.x,
+      y: this.sprite.y,
+      characterType: this.characterType
+    });
+    
+    // Brief invincibility frames
+    this.invincibilityFrames = 30; // ~0.5 seconds at 60fps
+  }
+
+  /**
+   * Start blocking
+   */
+  protected startBlocking(): void {
+    if (this.isBlocking || this.state === 'attacking' || this.state === 'grabbing') return;
+    
+    this.isBlocking = true;
+    this.blockDuration = GameConfig.BLOCK_DURATION;
+    this.setState('idle'); // Could be 'blocking' state if we add animation
+    
+    // Emit block event
+    this.scene.events.emit('blockStarted', {
+      x: this.sprite.x,
+      y: this.sprite.y,
+      characterType: this.characterType
+    });
+  }
+
+  /**
+   * Stop blocking
+   */
+  protected stopBlocking(): void {
+    if (!this.isBlocking) return;
+    
+    this.isBlocking = false;
+    this.blockDuration = 0;
+    this.blockCooldown = GameConfig.BLOCK_COOLDOWN;
+    
+    // Emit block end event
+    this.scene.events.emit('blockEnded', {
+      x: this.sprite.x,
+      y: this.sprite.y,
+      characterType: this.characterType
+    });
+  }
+
+  /**
+   * Check if character is blocking
+   */
+  isCurrentlyBlocking(): boolean {
+    return this.isBlocking;
+  }
+
+  /**
+   * Handle landing animation and effects
+   */
+  protected onLanding(): void {
+    if (!this.sprite || !this.sprite.active) return;
+    
+    // Set landing cooldown to prevent multiple triggers
+    this.landingCooldown = 200; // ~200ms cooldown
+    
+    // Emit landing event for visual effects
+    this.scene.events.emit('characterLanded', {
+      x: this.sprite.x,
+      y: this.sprite.y,
+      characterType: this.characterType,
+      playerIndex: this.playerIndex
+    });
+    
+    // Set landing state briefly (if not attacking or in other important state)
+    if (this.state !== 'attacking' && this.state !== 'grabbing' && this.state !== 'hit') {
+      this.setState('idle');
     }
   }
 
@@ -969,12 +1109,31 @@ export abstract class BaseCharacter extends BaseEntity {
   }
 
   /**
-   * Override takeDamage to drop weapon (only when taking damage, not healing)
+   * Override takeDamage to handle blocking and drop weapon
    */
   takeDamage(amount: number): void {
-    // Check invincibility frames first (from base class)
-    if ((this as any).invincibilityFrames > 0) {
+    // Check invincibility frames first
+    if (this.invincibilityFrames > 0) {
       return; // Ignore damage during invincibility
+    }
+    
+    // Check if blocking (reduces damage by 80%)
+    if (this.isBlocking && amount > 0) {
+      const blockedDamage = Math.floor(amount * 0.2); // Only 20% damage gets through
+      super.takeDamage(blockedDamage);
+      
+      // Emit block success event
+      this.scene.events.emit('blockSuccessful', {
+        x: this.sprite.x,
+        y: this.sprite.y,
+        characterType: this.characterType,
+        originalDamage: amount,
+        blockedDamage: blockedDamage
+      });
+      
+      // Stop blocking after taking blocked damage
+      this.stopBlocking();
+      return;
     }
     
     super.takeDamage(amount);

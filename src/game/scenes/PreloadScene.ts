@@ -42,6 +42,9 @@ export class PreloadScene extends Phaser.Scene {
     // Load item sprites
     this.loadItemSprites();
 
+    // Load weapon sprites
+    this.loadWeaponSprites();
+
     // Load background images (including level room images)
     BackgroundLoader.preloadBackgrounds(this);
 
@@ -330,6 +333,17 @@ export class PreloadScene extends Phaser.Scene {
     this.load.image('item_apple', 'assets/sprites/imgs/pickups/apple.png');
     this.load.image('item_chicken', 'assets/sprites/imgs/pickups/juice-can.png'); // Using juice can as chicken placeholder
     this.load.image('item_money', 'assets/sprites/imgs/pickups/football.png'); // Using football as money placeholder
+  }
+
+  /**
+   * Load weapon sprites
+   */
+  private loadWeaponSprites(): void {
+    // Load weapon sprites from assets/sprites/weapons/
+    this.load.image('weapon_pipe', 'assets/sprites/weapons/pipe.png');
+    this.load.image('weapon_knife', 'assets/sprites/weapons/knife.png');
+    this.load.image('weapon_bottle', 'assets/sprites/weapons/bottle.png');
+    this.load.image('weapon_bat', 'assets/sprites/weapons/bat.png');
   }
 
   /**

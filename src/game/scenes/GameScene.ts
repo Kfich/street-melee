@@ -300,10 +300,17 @@ export class GameScene extends Phaser.Scene {
           this.scene.resume();
         });
 
-        // Minus button - decrease volume (placeholder - implement when AudioManager methods are available)
+        // Minus button - decrease volume
         this.widgetManager.setMenuButtonCallback('minus', () => {
-          // Volume control to be implemented
-          console.log('[GameScene] Volume decrease requested');
+          if (this.audioManager) {
+            // Decrease both music and SFX volume by 10%
+            const currentMusicVol = this.audioManager.getMusicVolume();
+            const currentSFXVol = this.audioManager.getSFXVolume();
+            this.audioManager.setMusicVolume(Math.max(0, currentMusicVol - 0.1));
+            this.audioManager.setSFXVolume(Math.max(0, currentSFXVol - 0.1));
+            this.events.emit('musicVolumeChanged', this.audioManager.getMusicVolume());
+            this.events.emit('sfxVolumeChanged', this.audioManager.getSFXVolume());
+          }
         });
 
         // Pause button - toggle pause
@@ -323,10 +330,17 @@ export class GameScene extends Phaser.Scene {
           }
         });
 
-        // Plus button - increase volume (placeholder - implement when AudioManager methods are available)
+        // Plus button - increase volume
         this.widgetManager.setMenuButtonCallback('plus', () => {
-          // Volume control to be implemented
-          console.log('[GameScene] Volume increase requested');
+          if (this.audioManager) {
+            // Increase both music and SFX volume by 10%
+            const currentMusicVol = this.audioManager.getMusicVolume();
+            const currentSFXVol = this.audioManager.getSFXVolume();
+            this.audioManager.setMusicVolume(Math.min(1, currentMusicVol + 0.1));
+            this.audioManager.setSFXVolume(Math.min(1, currentSFXVol + 0.1));
+            this.events.emit('musicVolumeChanged', this.audioManager.getMusicVolume());
+            this.events.emit('sfxVolumeChanged', this.audioManager.getSFXVolume());
+          }
         });
 
         // Quit button - return to main menu
@@ -799,6 +813,18 @@ export class GameScene extends Phaser.Scene {
   }
 
   private setupCombatEffects() {
+    // Listen for special move events
+    this.events.on('specialMovePerformed', (data: { x: number; y: number; characterType: string }) => {
+      this.visualEffects.createSpecialMoveFlash(data.x, data.y, data.characterType);
+    });
+
+    // Listen for landing events
+    this.events.on('characterLanded', (data: { x: number; y: number; characterType: string; playerIndex: number }) => {
+      // Determine landing intensity based on character type or fall speed
+      // For now, use medium intensity - could be enhanced to track fall velocity
+      this.visualEffects.createLandingEffect(data.x, data.y, 'medium');
+    });
+
     // Listen for hit stop events
     this.events.on('hitStop', (type: 'light' | 'medium' | 'heavy' | 'knockdown') => {
       switch (type) {

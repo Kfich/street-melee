@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { BaseEntity } from '../base/BaseEntity';
 import { Hitbox } from '../../systems/combat/Hitbox';
+import { GameConfig } from '../../config/GameConfig';
 
 export type WeaponType = 'pipe' | 'knife' | 'bottle' | 'bat';
 
@@ -63,20 +64,61 @@ export class Weapon extends BaseEntity {
   }
 
   private setupWeapon() {
-    // Create placeholder sprite if it doesn't exist
-    if (!this.scene.textures.exists('weapon')) {
-      this.scene.add.graphics()
-        .fillStyle(0x888888)
-        .fillRect(0, 0, 20, 40)
-        .generateTexture('weapon', 20, 40);
-    }
-
-    this.sprite.setTexture('weapon');
-    this.sprite.setTint(this.stats.color);
+    // Use weapon-specific sprite texture
+    const textureKey = `weapon_${this.weaponType}`;
     
-    // Make weapon a sensor (no collision, just overlap detection)
-    const body = this.sprite.body as Phaser.Physics.Arcade.Body;
-    body.setSize(20, 40);
+    // Uniform display size for all weapons
+    const displayWidth = GameConfig.WEAPON_WIDTH;
+    const displayHeight = GameConfig.WEAPON_HEIGHT;
+    
+    // Set origin point (center for proper rotation and positioning)
+    this.sprite.setOrigin(0.5, 0.5);
+    
+    // Check if the weapon sprite exists, fallback to placeholder if not
+    if (this.scene.textures.exists(textureKey)) {
+      this.sprite.setTexture(textureKey);
+      
+      // Set uniform display size for all weapons (regardless of source sprite size)
+      this.sprite.setDisplaySize(displayWidth, displayHeight);
+      
+      // Enable pixel-perfect rendering
+      const texture = this.scene.textures.get(textureKey);
+      if (texture && typeof texture.setFilter === 'function') {
+        texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+      }
+      
+      // Make weapon a sensor (no collision, just overlap detection)
+      const body = this.sprite.body as Phaser.Physics.Arcade.Body;
+      if (body) {
+        // Physics body slightly smaller than display for better feel
+        body.setSize(displayWidth * 0.8, displayHeight * 0.9);
+        body.setOffset(
+          (displayWidth - body.width) / 2,
+          (displayHeight - body.height) / 2
+        );
+      }
+    } else {
+      // Fallback to placeholder if sprite not loaded
+      console.warn(`[Weapon] Texture ${textureKey} not found, using placeholder`);
+      if (!this.scene.textures.exists('weapon')) {
+        this.scene.add.graphics()
+          .fillStyle(this.stats.color)
+          .fillRect(0, 0, displayWidth, displayHeight)
+          .generateTexture('weapon', displayWidth, displayHeight);
+      }
+      this.sprite.setTexture('weapon');
+      this.sprite.setTint(this.stats.color);
+      this.sprite.setDisplaySize(displayWidth, displayHeight);
+      
+      const body = this.sprite.body as Phaser.Physics.Arcade.Body;
+      if (body) {
+        body.setSize(displayWidth * 0.8, displayHeight * 0.9);
+        body.setOffset(
+          (displayWidth - body.width) / 2,
+          (displayHeight - body.height) / 2
+        );
+      }
+    }
   }
 
   /**
@@ -212,6 +254,10 @@ export class Weapon extends BaseEntity {
       
       this.sprite.setPosition(this.owner.x + offsetX, this.owner.y);
       this.sprite.setFlipX(!facingRight);
+      
+      // Ensure weapon sprite is visible and properly scaled
+      this.sprite.setVisible(true);
+      this.sprite.setActive(true);
     }
     
     // If thrown, check if it should stop
@@ -271,16 +317,29 @@ export class Weapon extends BaseEntity {
   /**
    * Reset weapon state for object pooling
    */
-  reset(x: number, y: number): void {
+  reset(x: number, y: number, weaponType: WeaponType): void {
     // Reset base entity
     super.reset(x, y);
+    
+    // Update weapon type if different
+    if (weaponType !== this.weaponType) {
+      this.weaponType = weaponType;
+      this.stats = WEAPON_STATS[weaponType];
+    }
     
     // Reset weapon-specific state
     this.throwCount = 0;
     this.owner = null;
     this.isThrown = false;
     
-    // Re-setup weapon sprite
+    // Reset sprite properties
+    if (this.sprite) {
+      this.sprite.setFlipX(false);
+      this.sprite.setRotation(0);
+      this.sprite.setScale(1, 1);
+    }
+    
+    // Re-setup weapon sprite with correct texture
     this.setupWeapon();
   }
 }

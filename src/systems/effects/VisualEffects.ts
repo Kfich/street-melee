@@ -287,6 +287,209 @@ export class VisualEffects {
     this.screenShake(0.005, duration);
   }
 
+  /**
+   * Create flash effect for special moves
+   * @param x - X position
+   * @param y - Y position
+   * @param color - Flash color (default: white)
+   * @param intensity - Flash intensity (0-1)
+   * @param duration - Flash duration in ms
+   */
+  createFlashEffect(x: number, y: number, color: number = 0xffffff, intensity: number = 0.6, duration: number = 150): void {
+    // Create full-screen flash overlay
+    const flash = this.scene.add.rectangle(
+      this.scene.cameras.main.centerX,
+      this.scene.cameras.main.centerY,
+      this.scene.cameras.main.width,
+      this.scene.cameras.main.height,
+      color,
+      intensity
+    );
+    flash.setDepth(2000); // Above everything
+    flash.setScrollFactor(0); // Fixed to camera
+    flash.setOrigin(0.5);
+
+    // Flash animation - quick fade out
+    this.scene.tweens.add({
+      targets: flash,
+      alpha: 0,
+      duration: duration,
+      ease: 'Power2',
+      onComplete: () => {
+        flash.destroy();
+      }
+    });
+  }
+
+  /**
+   * Create character-specific flash effect for special moves
+   * @param x - X position
+   * @param y - Y position
+   * @param characterType - Character type for color
+   */
+  createSpecialMoveFlash(x: number, y: number, characterType: string): void {
+    // Character-specific flash colors
+    const flashColors: Record<string, number> = {
+      axel: 0x00ff00,    // Green
+      blaze: 0xff00ff,   // Magenta
+      max: 0x0088ff,     // Blue
+      sammy: 0xffff00    // Yellow
+    };
+
+    const color = flashColors[characterType.toLowerCase()] || 0xffffff;
+    
+    // Create radial flash at character position
+    const flash = this.scene.add.circle(x, y, 0, color, 0.8);
+    flash.setDepth(1999);
+    
+    // Expand and fade
+    this.scene.tweens.add({
+      targets: flash,
+      radius: 200,
+      alpha: 0,
+      duration: 300,
+      ease: 'Power2',
+      onComplete: () => {
+        flash.destroy();
+      }
+    });
+
+    // Also create screen flash
+    this.createFlashEffect(x, y, color, 0.3, 100);
+    
+    // Add particle effects for special moves
+    this.createSpecialMoveParticles(x, y, characterType);
+  }
+
+  /**
+   * Create particle effects for special moves
+   * @param x - X position
+   * @param y - Y position
+   * @param characterType - Character type for color
+   */
+  createSpecialMoveParticles(x: number, y: number, characterType: string): void {
+    // Character-specific particle colors
+    const particleColors: Record<string, number> = {
+      axel: 0x00ff00,    // Green
+      blaze: 0xff00ff,   // Magenta
+      max: 0x0088ff,     // Blue
+      sammy: 0xffff00    // Yellow
+    };
+
+    const color = particleColors[characterType.toLowerCase()] || 0xffffff;
+    
+    // Create energy particles
+    for (let i = 0; i < 12; i++) {
+      const particle = this.scene.add.circle(
+        x,
+        y,
+        2 + Math.random() * 3,
+        color,
+        0.9
+      );
+      
+      const angle = (Math.PI * 2 * i) / 12 + (Math.random() - 0.5) * 0.3;
+      const speed = 40 + Math.random() * 60;
+      const distance = 30 + Math.random() * 40;
+      
+      this.scene.tweens.add({
+        targets: particle,
+        x: particle.x + Math.cos(angle) * distance,
+        y: particle.y + Math.sin(angle) * distance,
+        alpha: 0,
+        scale: 0,
+        duration: 300 + Math.random() * 200,
+        ease: 'Power2',
+        onComplete: () => {
+          particle.destroy();
+        }
+      });
+    }
+    
+    // Create spark particles (smaller, faster)
+    for (let i = 0; i < 8; i++) {
+      const spark = this.scene.add.circle(
+        x + (Math.random() - 0.5) * 20,
+        y + (Math.random() - 0.5) * 20,
+        1 + Math.random() * 2,
+        color,
+        1
+      );
+      
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 60 + Math.random() * 80;
+      
+      this.scene.tweens.add({
+        targets: spark,
+        x: spark.x + Math.cos(angle) * speed,
+        y: spark.y + Math.sin(angle) * speed,
+        alpha: 0,
+        scale: 0,
+        duration: 200 + Math.random() * 100,
+        ease: 'Power2',
+        onComplete: () => {
+          spark.destroy();
+        }
+      });
+    }
+  }
+
+  /**
+   * Create landing effect (dust particles and impact)
+   * @param x - X position
+   * @param y - Y position
+   * @param intensity - Landing intensity (based on fall speed)
+   */
+  createLandingEffect(x: number, y: number, intensity: 'light' | 'medium' | 'heavy' = 'medium'): void {
+    const particleCount = intensity === 'heavy' ? 8 : intensity === 'medium' ? 5 : 3;
+    const spread = intensity === 'heavy' ? 40 : intensity === 'medium' ? 30 : 20;
+    
+    // Create dust particles
+    for (let i = 0; i < particleCount; i++) {
+      const particle = this.scene.add.circle(
+        x + (Math.random() - 0.5) * spread,
+        y,
+        2 + Math.random() * 2,
+        0xcccccc, // Light gray dust
+        0.7
+      );
+      
+      const angle = (Math.PI * 2 * i) / particleCount + (Math.random() - 0.5) * 0.5;
+      const speed = 20 + Math.random() * 30;
+      
+      this.scene.tweens.add({
+        targets: particle,
+        x: particle.x + Math.cos(angle) * speed,
+        y: particle.y + Math.sin(angle) * speed + 10,
+        alpha: 0,
+        scale: 0,
+        duration: 400 + Math.random() * 200,
+        onComplete: () => {
+          particle.destroy();
+        }
+      });
+    }
+    
+    // Create impact circle
+    const impact = this.scene.add.circle(x, y, 0, 0xffffff, 0.3);
+    impact.setDepth(998);
+    
+    this.scene.tweens.add({
+      targets: impact,
+      radius: intensity === 'heavy' ? 25 : intensity === 'medium' ? 18 : 12,
+      alpha: 0,
+      duration: 200,
+      onComplete: () => {
+        impact.destroy();
+      }
+    });
+    
+    // Light screen shake for heavy landings
+    if (intensity === 'heavy') {
+      this.screenShakeLight(100);
+    }
+  }
+
   screenShakeMedium(duration: number = 200) {
     this.screenShake(0.01, duration);
   }

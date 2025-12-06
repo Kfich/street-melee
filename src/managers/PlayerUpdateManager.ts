@@ -132,7 +132,17 @@ export class PlayerUpdateManager {
   private updateWeaponIndicator(player: Player, index: number): void {
     if (this.weaponIndicators[index]) {
       const weapon = player.getWeapon();
-      this.weaponIndicators[index].updateWeapon(weapon ? weapon.getWeaponType() : null);
+      if (weapon) {
+        const throwCount = weapon.getThrowCount();
+        const maxThrows = (weapon as any).maxThrows || 3;
+        this.weaponIndicators[index].updateWeapon(
+          weapon.getWeaponType(),
+          throwCount,
+          maxThrows
+        );
+      } else {
+        this.weaponIndicators[index].updateWeapon(null);
+      }
     }
   }
 

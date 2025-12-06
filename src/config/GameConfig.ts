@@ -20,6 +20,10 @@ export const GameConfig = {
   PLAYER_WIDTH: 32,
   PLAYER_HEIGHT: 48,
 
+  // Weapons
+  WEAPON_WIDTH: 24,
+  WEAPON_HEIGHT: 40,
+
   // Movement multipliers
   SPEED_MULTIPLIER: 0.1,
   JUMP_MULTIPLIER: 0.2,
@@ -31,12 +35,16 @@ export const GameConfig = {
   // Input
   DASH_DOUBLE_TAP_TIME: 200, // milliseconds
   COMBO_WINDOW: 500, // milliseconds
+  INPUT_BUFFER_WINDOW: 100, // milliseconds for input buffering
 
   // Combat
   ATTACK_DURATION: 300,
   SPECIAL_MOVE_DURATION: 500,
   KNOCKDOWN_THRESHOLD: 50, // damage threshold for knockdown
   HEAVY_HIT_THRESHOLD: 25, // damage threshold for heavy hit effects
+  AIR_RECOVERY_COOLDOWN: 1000, // milliseconds - cooldown after using air recovery
+  BLOCK_DURATION: 300, // milliseconds - how long block lasts
+  BLOCK_COOLDOWN: 200, // milliseconds - cooldown between blocks
   
   // Spatial Partitioning
   SPATIAL_GRID_CELL_SIZE: 200, // Size of each grid cell for collision detection
