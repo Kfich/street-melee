@@ -9,4 +9,5 @@ export * from './DialogueSystem';
 export * from './NarrativeSystem';
 export * from './SceneDialogueData';
 export * from './StoryData';
+export * from './CutsceneTriggerSystem';
 

@@ -22,6 +22,11 @@ export class CharacterSelectScene extends BaseMenuScene {
   }
 
   init(data: { isMultiplayer?: boolean; roomId?: string }) {
+    // Reset character selections when scene is initialized
+    this.selectedCharacters = [null, null];
+    this.currentPlayer = 0;
+    this.selectedIndex = 0;
+    
     this.isMultiplayer = data.isMultiplayer || false;
     this.roomId = data.roomId;
   }

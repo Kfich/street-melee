@@ -53,9 +53,11 @@ export class StoryManager {
   private checkCutsceneConditions(cutscene: Cutscene): boolean {
     if (!cutscene.conditions) return true;
 
-    // Check scene index
+    // Check scene index (conditions use 1-based, we store 0-based internally)
     if (cutscene.conditions.scene_index !== undefined) {
-      if (this.currentSceneIndex !== cutscene.conditions.scene_index) {
+      const currentSceneIndex1Based = this.currentSceneIndex + 1; // Convert to 1-based
+      if (currentSceneIndex1Based !== cutscene.conditions.scene_index) {
+        console.log(`[StoryManager] Scene index mismatch: current=${currentSceneIndex1Based}, required=${cutscene.conditions.scene_index}`);
         return false;
       }
     }
@@ -102,7 +104,9 @@ export class StoryManager {
     }
 
     // Check if already viewed (unless repeatable)
-    if (!cutscene.repeatable && this.viewedCutscenes.has(cutscene.id)) {
+    // For intro/outro, allow replaying (they're special)
+    const isSpecialCutscene = cutscene.type === 'intro' || cutscene.type === 'outro';
+    if (!cutscene.repeatable && !isSpecialCutscene && this.viewedCutscenes.has(cutscene.id)) {
       console.log(`[StoryManager] Cutscene ${cutscene.id} already viewed`);
       return;
     }
@@ -112,12 +116,19 @@ export class StoryManager {
     this.currentEntryIndex = 0;
     this.isPlayingCutscene = true;
 
-    // Mark as viewed
-    this.viewedCutscenes.add(cutscene.id);
-    this.saveFlags();
+    // Mark as viewed (except for intro/outro which can be replayed)
+    if (!isSpecialCutscene) {
+      this.viewedCutscenes.add(cutscene.id);
+      this.saveFlags();
+    }
 
-    // Pause game if needed (only if we're in GameScene)
-    if (cutscene.type !== 'level_transition' && this.scene.scene.key === 'GameScene') {
+    // Pause game if needed (only if we're in GameScene and not intro/outro/level_transition)
+    // Intro/outro cutscenes should NOT pause the scene because we need time events to work
+    // We'll handle pausing gameplay differently (disable input, stop entities, etc.)
+    if (cutscene.type !== 'level_transition' && 
+        cutscene.type !== 'intro' && 
+        cutscene.type !== 'outro' && 
+        this.scene.scene.key === 'GameScene') {
       this.scene.scene.pause('GameScene');
     }
 
@@ -165,6 +176,7 @@ export class StoryManager {
 
     // Start dialogue
     if (scene.dialogue && scene.dialogue.length > 0) {
+      console.log('[StoryManager] Scene has', scene.dialogue.length, 'dialogue entries');
       this.currentEntryIndex = 0;
       this.playDialogueEntry(scene.dialogue[0]);
     } else if (scene.duration !== undefined) {
@@ -194,17 +206,79 @@ export class StoryManager {
       text = this.getSceneDialogue(entry.scene_dialogue_key);
     }
 
-    // Create dialogue box
+    // Debug logging
+    console.log('[StoryManager] Playing dialogue entry:', {
+      speaker: entry.speaker,
+      text: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
+      textLength: text.length,
+      scene_dialogue_key: entry.scene_dialogue_key,
+      typewriter_speed: entry.typewriter_speed,
+      auto_advance: entry.auto_advance,
+    });
+
+    // Replace {CHARACTER} placeholder with actual character name
+    if (text.includes('{CHARACTER}')) {
+      const characterName = this.currentCharacter ? this.currentCharacter.toUpperCase() : 'HERO';
+      text = text.replace(/{CHARACTER}/g, characterName);
+      console.log('[StoryManager] Replaced {CHARACTER} with:', characterName);
+    }
+
+    // Ensure we have text to display
+    if (!text || text.trim().length === 0) {
+      console.warn('[StoryManager] No text to display for dialogue entry:', entry);
+      text = '[No text available]';
+    }
+
+    // Create dialogue box (this creates the text element)
     this.createDialogueBox(entry, text);
 
-    // Handle typewriter effect
-    if (entry.typewriter_speed && entry.typewriter_speed > 0) {
-      this.startTypewriter(text, entry.typewriter_speed);
-    } else {
-      if (this.dialogueText) {
-        this.dialogueText.setText(text);
-      }
+    // Set text immediately after box creation
+    // Use a small delay to ensure the element is fully in the display list
+    // But also set it synchronously as a fallback
+    if (this.dialogueText) {
+      // Set initial empty text to ensure texture is initialized
+      this.dialogueText.setText('');
+      this.dialogueText.setVisible(true);
+      this.dialogueText.setActive(true);
     }
+
+    // Use delayedCall to set actual text (allows time for texture initialization)
+    this.scene.time.delayedCall(50, () => {
+      console.log('[StoryManager] delayedCall callback executing...');
+      if (!this.dialogueText) {
+        console.error('[StoryManager] dialogueText is null when trying to set text!');
+        return;
+      }
+
+      // Ensure text element is visible and active
+      this.dialogueText.setVisible(true);
+      this.dialogueText.setActive(true);
+
+      console.log('[StoryManager] dialogueText exists, checking typewriter_speed:', entry.typewriter_speed);
+
+      // Handle typewriter effect
+      if (entry.typewriter_speed && entry.typewriter_speed > 0) {
+        const speed = entry.typewriter_speed ?? 0.015;
+        console.log('[StoryManager] Starting typewriter with text:', text.substring(0, 50));
+        this.startTypewriter(text, speed);
+      } else {
+        // Set text directly
+        console.log('[StoryManager] Setting text directly, before:', this.dialogueText.text);
+        this.dialogueText.setText(text);
+        this.dialogueText.setVisible(true);
+        console.log('[StoryManager] Set dialogue text directly, after:', this.dialogueText.text.substring(0, 50));
+        console.log('[StoryManager] Text element state:', {
+          visible: this.dialogueText.visible,
+          active: this.dialogueText.active,
+          alpha: this.dialogueText.alpha,
+          x: this.dialogueText.x,
+          y: this.dialogueText.y,
+          textLength: this.dialogueText.text.length,
+          worldX: this.dialogueText.getWorldTransformMatrix().tx,
+          worldY: this.dialogueText.getWorldTransformMatrix().ty,
+        });
+      }
+    });
 
     // Auto-advance if enabled
     if (entry.auto_advance) {
@@ -240,6 +314,18 @@ export class StoryManager {
     // Create container
     this.cutsceneContainer = this.scene.add.container(width / 2, boxY);
     this.cutsceneContainer.setDepth(10000);
+    this.cutsceneContainer.setVisible(true);
+    this.cutsceneContainer.setActive(true);
+    // Ensure container is in the display list and on top
+    this.scene.children.bringToTop(this.cutsceneContainer);
+    
+    console.log('[StoryManager] Created cutscene container:', {
+      x: this.cutsceneContainer.x,
+      y: this.cutsceneContainer.y,
+      depth: this.cutsceneContainer.depth,
+      visible: this.cutsceneContainer.visible,
+      active: this.cutsceneContainer.active,
+    });
 
     // Create dialogue box background
     const boxWidth = width - 100;
@@ -288,7 +374,20 @@ export class StoryManager {
       lineSpacing: 4,
     });
     this.dialogueText.setDepth(10002);
+    this.dialogueText.setVisible(true);
+    this.dialogueText.setActive(true);
     this.cutsceneContainer.add(this.dialogueText);
+    
+    console.log('[StoryManager] Created dialogue text element:', {
+      exists: !!this.dialogueText,
+      visible: this.dialogueText.visible,
+      active: this.dialogueText.active,
+      x: this.dialogueText.x,
+      y: this.dialogueText.y,
+      text: this.dialogueText.text,
+      depth: this.dialogueText.depth,
+      inContainer: this.cutsceneContainer.list.includes(this.dialogueText),
+    });
 
     // Add prompt text for manual advance
     if (!entry.auto_advance) {
@@ -311,23 +410,59 @@ export class StoryManager {
    * Start typewriter effect
    */
   private startTypewriter(fullText: string, speed: number): void {
-    if (!this.dialogueText) return;
+    if (!this.dialogueText) {
+      console.error('[StoryManager] Cannot start typewriter - dialogueText is null');
+      return;
+    }
+
+    console.log('[StoryManager] Starting typewriter effect:', {
+      textLength: fullText.length,
+      speed: speed,
+      delay: speed * 1000,
+      dialogueTextExists: !!this.dialogueText,
+      dialogueTextVisible: this.dialogueText.visible,
+    });
 
     let currentIndex = 0;
     this.dialogueText.setText('');
+    this.dialogueText.setVisible(true);
+    this.dialogueText.setActive(true);
+    console.log('[StoryManager] Cleared dialogue text, starting typewriter...');
+
+    // Calculate delay in milliseconds
+    const delayMs = speed * 1000;
+    console.log('[StoryManager] Typewriter delay:', delayMs, 'ms per character');
 
     this.typewriterTimer = this.scene.time.addEvent({
-      delay: speed * 1000,
+      delay: delayMs,
       callback: () => {
-        if (currentIndex < fullText.length && this.dialogueText) {
-          this.dialogueText.setText(fullText.substring(0, currentIndex + 1));
+        if (!this.dialogueText) {
+          console.error('[StoryManager] dialogueText became null during typewriter!');
+          if (this.typewriterTimer) {
+            this.typewriterTimer.destroy();
+          }
+          return;
+        }
+        
+        if (currentIndex < fullText.length) {
+          const displayText = fullText.substring(0, currentIndex + 1);
+          this.dialogueText.setText(displayText);
+          this.dialogueText.setVisible(true);
+          this.dialogueText.setActive(true);
+          console.log(`[StoryManager] Typewriter progress: ${currentIndex + 1}/${fullText.length} - "${displayText.substring(Math.max(0, displayText.length - 10))}"`);
           currentIndex++;
-        } else if (this.typewriterTimer) {
-          this.typewriterTimer.destroy();
+        } else {
+          if (this.typewriterTimer) {
+            this.typewriterTimer.destroy();
+            this.typewriterTimer = undefined;
+          }
+          console.log('[StoryManager] Typewriter effect complete');
         }
       },
       repeat: fullText.length,
     });
+    
+    console.log('[StoryManager] Typewriter timer created, should start displaying text...');
   }
 
   /**
@@ -336,10 +471,20 @@ export class StoryManager {
   private getSceneDialogue(key: string): string {
     // Get character-specific dialogue
     const lines = getSceneDialogue(this.currentCharacter, key);
+    console.log('[StoryManager] Getting scene dialogue:', {
+      character: this.currentCharacter,
+      key: key,
+      linesFound: lines ? lines.length : 0,
+      lines: lines,
+    });
     if (lines && lines.length > 0) {
-      return lines.join('\n');
+      const text = lines.join('\n');
+      console.log('[StoryManager] Scene dialogue text:', text.substring(0, 100));
+      return text;
     }
-    return `[Scene Dialogue ${key}]`;
+    const fallback = `[Scene Dialogue ${key}]`;
+    console.warn('[StoryManager] No dialogue found for key:', key, 'using fallback');
+    return fallback;
   }
 
   /**
@@ -398,12 +543,23 @@ export class StoryManager {
       }
       this.saveFlags();
     }
+    
+    // Mark intro/outro as viewed after completion (so they can be skipped on replay)
+    if (this.currentCutscene) {
+      const isSpecialCutscene = this.currentCutscene.type === 'intro' || this.currentCutscene.type === 'outro';
+      if (isSpecialCutscene) {
+        this.viewedCutscenes.add(this.currentCutscene.id);
+        this.saveFlags();
+      }
+    }
 
     // Clear dialogue
     this.clearDialogue();
 
-    // Resume game
-    if (this.currentCutscene?.type !== 'level_transition') {
+    // Resume game (only if we actually paused it)
+    if (this.currentCutscene?.type !== 'level_transition' && 
+        this.currentCutscene?.type !== 'intro' && 
+        this.currentCutscene?.type !== 'outro') {
       this.scene.scene.resume('GameScene');
     }
 

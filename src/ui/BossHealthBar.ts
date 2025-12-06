@@ -72,10 +72,11 @@ export class BossHealthBar {
     this.healthBarFill.setScrollFactor(0, 0);
 
     // Boss name text
+    // Initialize with empty string - will be set when boss is assigned
     this.bossNameText = this.scene.add.text(
       barX,
       barY - 25,
-      '',
+      'BOSS',
       {
         fontSize: '20px',
         fontFamily: 'Arial',
@@ -88,6 +89,9 @@ export class BossHealthBar {
     this.bossNameText.setOrigin(0.5, 0.5);
     this.bossNameText.setDepth(2003);
     this.bossNameText.setScrollFactor(0, 0);
+    // Ensure text is visible and active
+    this.bossNameText.setVisible(true);
+    this.bossNameText.setActive(true);
 
     // Phase indicator text
     this.phaseText = this.scene.add.text(
@@ -139,16 +143,44 @@ export class BossHealthBar {
    * Update boss name display
    */
   private updateBossName(): void {
-    if (!this.boss) return;
+    if (!this.boss || !this.bossNameText) return;
 
     const bossNames: Record<string, string> = {
       'mr_x': 'MR. X',
       'abobo': 'ABOBO',
-      'barbon': 'BARBON'
+      'barbon': 'BARBON',
+      'tony': 'TONY',
+      'midnight': 'DOCTOR MIDNIGHT',
+      'police': 'POLICE',
+      'blizz': 'BLIZZY',
+      'benny': 'BIG BEN',
+      'principle': 'PRINCIPAL',
+      'angela': 'ANGELA'
     };
 
     const name = bossNames[this.boss.getBossType()] || 'BOSS';
-    this.bossNameText.setText(name);
+    
+    // Always defer text setting to next frame to ensure Phaser has fully initialized the texture
+    // This prevents "Cannot read properties of null (reading 'drawImage')" errors
+    this.scene.time.delayedCall(0, () => {
+      if (this.bossNameText && this.bossNameText.active && this.bossNameText.scene) {
+        try {
+          this.bossNameText.setText(name);
+        } catch (error) {
+          // If setting text fails, try again after a longer delay
+          console.warn('[BossHealthBar] Failed to set boss name, retrying...', error);
+          this.scene.time.delayedCall(50, () => {
+            if (this.bossNameText && this.bossNameText.active && this.bossNameText.scene) {
+              try {
+                this.bossNameText.setText(name);
+              } catch (e) {
+                console.error('[BossHealthBar] Failed to set boss name after retry', e);
+              }
+            }
+          });
+        }
+      }
+    });
   }
 
   /**

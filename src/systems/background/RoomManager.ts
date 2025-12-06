@@ -534,6 +534,13 @@ export class RoomManager {
   }
 
   /**
+   * Get current room ID
+   */
+  getCurrentRoomId(): string | null {
+    return this.currentRoom?.id || null;
+  }
+
+  /**
    * Get current level configuration
    */
   getCurrentLevel(): LevelConfig | null {

@@ -295,20 +295,8 @@ export abstract class BaseCharacter extends BaseEntity {
       currentVerticalInput.up !== this.lastVerticalInput.up || 
       currentVerticalInput.down !== this.lastVerticalInput.down;
     
-    // Log when vertical input is pressed
+    // Update last vertical input state
     if (verticalInputChanged) {
-      if (currentVerticalInput.up && !this.lastVerticalInput.up) {
-        console.log(`[Player ${this.playerIndex}] UP PRESSED - Y: ${this.sprite.y.toFixed(2)}, VelocityY: ${body?.velocity.y.toFixed(2)}, GravityY: ${body?.gravity.y}`);
-      }
-      if (currentVerticalInput.down && !this.lastVerticalInput.down) {
-        console.log(`[Player ${this.playerIndex}] DOWN PRESSED - Y: ${this.sprite.y.toFixed(2)}, VelocityY: ${body?.velocity.y.toFixed(2)}, GravityY: ${body?.gravity.y}`);
-      }
-      if (!currentVerticalInput.up && this.lastVerticalInput.up) {
-        console.log(`[Player ${this.playerIndex}] UP RELEASED - Y: ${this.sprite.y.toFixed(2)}, VelocityY: ${body?.velocity.y.toFixed(2)}, GravityY: ${body?.gravity.y}`);
-      }
-      if (!currentVerticalInput.down && this.lastVerticalInput.down) {
-        console.log(`[Player ${this.playerIndex}] DOWN RELEASED - Y: ${this.sprite.y.toFixed(2)}, VelocityY: ${body?.velocity.y.toFixed(2)}, GravityY: ${body?.gravity.y}`);
-      }
       this.lastVerticalInput = { ...currentVerticalInput };
     }
     
@@ -319,7 +307,6 @@ export abstract class BaseCharacter extends BaseEntity {
       // Move up (backward in depth) - use direct position update
       // Cap at groundRangeTop (cannot move above ground range)
       if (this.sprite.active) {
-        const oldY = this.sprite.y;
         const newY = Math.max(groundRangeTop, this.sprite.y - verticalDelta); // Clamp to top of ground range
         this.sprite.setPosition(this.sprite.x, newY);
         // Disable gravity and stop vertical velocity immediately
@@ -328,15 +315,10 @@ export abstract class BaseCharacter extends BaseEntity {
           body.setGravityY(0);
         }
         isManuallyMovingVertical = true;
-        // Log position change if significant
-        if (Math.abs(newY - oldY) > 0.1) {
-          console.log(`[Player ${this.playerIndex}] Moving UP: ${oldY.toFixed(2)} -> ${newY.toFixed(2)}`);
-        }
       }
     } else if (input.down && !input.jump) {
       // Move down (forward in depth) - use direct position update
       if (this.sprite.active) {
-        const oldY = this.sprite.y;
         const newY = Math.min(groundRangeBottom, this.sprite.y + verticalDelta); // Clamp to bottom of frame
         this.sprite.setPosition(this.sprite.x, newY);
         // Disable gravity and stop vertical velocity immediately
@@ -345,20 +327,12 @@ export abstract class BaseCharacter extends BaseEntity {
           body.setGravityY(0);
         }
         isManuallyMovingVertical = true;
-        // Log position change if significant
-        if (Math.abs(newY - oldY) > 0.1) {
-          console.log(`[Player ${this.playerIndex}] Moving DOWN: ${oldY.toFixed(2)} -> ${newY.toFixed(2)}`);
-        }
       }
     }
     
     // When not manually moving vertically, ensure character stops at exact coordinate
     // Store the target Y position to prevent drift
     if (!isManuallyMovingVertical && body) {
-      const oldY = this.sprite.y;
-      const oldVelocityY = body.velocity.y;
-      const oldGravityY = body.gravity.y;
-      
       // Store target Y position when input stops (first frame after release)
       if (this.targetYPosition === null) {
         this.targetYPosition = this.sprite.y;
@@ -371,7 +345,6 @@ export abstract class BaseCharacter extends BaseEntity {
       
       // Restore to target position if it has drifted
       if (this.targetYPosition !== null && Math.abs(this.sprite.y - this.targetYPosition) > 0.1) {
-        console.log(`[Player ${this.playerIndex}] Restoring position from drift: ${this.sprite.y.toFixed(2)} -> ${this.targetYPosition.toFixed(2)}`);
         this.sprite.setPosition(this.sprite.x, this.targetYPosition);
       }
       
@@ -380,17 +353,10 @@ export abstract class BaseCharacter extends BaseEntity {
         // Above ground range - clamp to top of ground range
         this.sprite.setPosition(this.sprite.x, groundRangeTop);
         this.targetYPosition = groundRangeTop;
-        console.log(`[Player ${this.playerIndex}] Clamped ABOVE range: ${oldY.toFixed(2)} -> ${groundRangeTop.toFixed(2)}`);
       } else if (this.sprite.y > groundRangeBottom) {
         // Below ground range - clamp to bottom
         this.sprite.setPosition(this.sprite.x, groundRangeBottom);
         this.targetYPosition = groundRangeBottom;
-        console.log(`[Player ${this.playerIndex}] Clamped BELOW range: ${oldY.toFixed(2)} -> ${groundRangeBottom.toFixed(2)}`);
-      }
-      
-      // Log if position or physics changed unexpectedly (drift detection)
-      if (Math.abs(this.sprite.y - oldY) > 0.01 || Math.abs(body.velocity.y - oldVelocityY) > 0.01 || Math.abs(body.gravity.y - oldGravityY) > 0.01) {
-        console.log(`[Player ${this.playerIndex}] DRIFT DETECTED in handleInput - Y: ${oldY.toFixed(2)} -> ${this.sprite.y.toFixed(2)}, VelocityY: ${oldVelocityY.toFixed(2)} -> ${body.velocity.y.toFixed(2)}, GravityY: ${oldGravityY.toFixed(2)} -> ${body.gravity.y.toFixed(2)}`);
       }
     } else if (isManuallyMovingVertical) {
       // Clear target position when moving manually

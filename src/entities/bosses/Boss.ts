@@ -3,7 +3,7 @@ import { BaseEntity } from '../base/BaseEntity';
 import { Player } from '../characters/Player';
 import { Hitbox } from '../../systems/combat/Hitbox';
 
-export type BossType = 'blizz' | 'benny' | 'principle' | 'midnight' | 'angela' | 'tony';
+export type BossType = 'blizz' | 'benny' | 'principle' | 'midnight' | 'angela' | 'tony' | 'police';
 
 export interface BossStats {
   health: number;
@@ -75,14 +75,24 @@ export const BOSS_STATS: Record<BossType, BossStats> = {
     spriteKey: 'angela'
   },
   tony: {
-    health: 800,
-    speed: 80,
-    damage: 30,
-    attackRange: 90,
+    health: 155, // Base health, can be scaled up for final fight (200 HP)
+    speed: 60,
+    damage: 20,
+    attackRange: 400, // Ranged attacker (ice shards)
     detectionRange: 500,
-    attackCooldown: 1500,
+    attackCooldown: 1200, // Shoots every 1.2 seconds (72 frames)
     canAttack: true,
-    spriteKey: 'tony' // Placeholder - Tony sprites may need to be added
+    spriteKey: 'tony'
+  },
+  police: {
+    health: 100,
+    speed: 50,
+    damage: 15,
+    attackRange: 350, // Projectile-based (taser)
+    detectionRange: 400,
+    attackCooldown: 1500, // Burst fire pattern
+    canAttack: true,
+    spriteKey: 'police'
   }
 };
 
@@ -134,6 +144,8 @@ export class Boss extends BaseEntity {
     // Set boss appearance
     if (this.bossType === 'angela' || this.bossType === 'principle') {
       this.sprite.setScale(1.0); // Normal size for non-combat bosses
+    } else if (this.bossType === 'police') {
+      this.sprite.setScale(0.8); // Smaller scale for police characters
     } else {
       this.sprite.setScale(1.2); // Slightly larger for combat bosses
     }
@@ -233,9 +245,29 @@ export class Boss extends BaseEntity {
       }
     }
 
-    // Only change texture if it exists and is different
-    if (this.scene.textures.exists(newTextureKey) && this.sprite.texture.key !== newTextureKey) {
+    // Always update texture if direction changed, even if texture key is the same
+    // This ensures bosses face the correct direction
+    const currentTextureKey = this.sprite.texture.key;
+    const currentDirection = currentTextureKey.includes('_right') ? 'right' : 
+                            currentTextureKey.includes('_left') ? 'left' : '';
+    
+    // Update if texture exists and is different, OR if direction changed
+    if (this.scene.textures.exists(newTextureKey) && 
+        (currentTextureKey !== newTextureKey || currentDirection !== direction)) {
       this.sprite.setTexture(newTextureKey);
+      // Never flip sprite when using directional textures
+      this.sprite.setFlipX(false);
+      // Maintain scale for police characters after texture change
+      if (this.bossType === 'police') {
+        this.sprite.setScale(0.8);
+      }
+    } else if (!this.scene.textures.exists(newTextureKey)) {
+      // Fallback: if directional texture doesn't exist, try base texture and flip
+      const baseTextureKey = newTextureKey.replace(`_${direction}`, '_right');
+      if (this.scene.textures.exists(baseTextureKey)) {
+        this.sprite.setTexture(baseTextureKey);
+        this.sprite.setFlipX(!this.isFacingRight());
+      }
     }
   }
 
@@ -313,6 +345,10 @@ export class Boss extends BaseEntity {
     switch (this.aiState) {
       case 'idle':
       case 'pursue':
+        // Update facing direction to face the target
+        const dx = this.target.sprite.x - this.sprite.x;
+        this.facingRight = dx > 0;
+        
         if (distance <= this.stats.attackRange && this.attackCooldown <= 0) {
           this.performAttack();
         } else if (distance <= this.stats.detectionRange) {
@@ -382,8 +418,8 @@ export class Boss extends BaseEntity {
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
     
     const dx = this.target.sprite.x - this.sprite.x;
+    // Update facing direction (don't flip sprite - directional textures handle direction)
     this.facingRight = dx > 0;
-    this.sprite.setFlipX(!this.facingRight);
 
     if (Math.abs(dx) > 10) {
       body.setVelocityX(dx > 0 ? speed : -speed);
@@ -392,6 +428,8 @@ export class Boss extends BaseEntity {
       body.setVelocityX(0);
       this.state = 'idle';
     }
+    
+    // updateSprite() will be called in the update loop to apply the correct directional texture
   }
 
   /**
@@ -498,8 +536,8 @@ export class Boss extends BaseEntity {
     const direction = this.target.sprite.x > this.sprite.x ? 1 : -1;
 
     body.setVelocityX(chargeSpeed * direction);
+    // Update facing direction (don't flip sprite - directional textures handle direction)
     this.facingRight = direction > 0;
-    this.sprite.setFlipX(!this.facingRight);
 
     // Create hitbox during charge
     const hitbox = new Hitbox(

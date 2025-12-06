@@ -30,6 +30,8 @@ import { MultiplayerClient } from '../../multiplayer/Client';
 import { BossHealthBar } from '../../ui/BossHealthBar';
 import { StoryManager, LevelTransitionSystem, DialogueSystem, NarrativeSystem } from '../../systems/story';
 import { STORY_REGISTRY } from '../../systems/story/StoryData';
+import { CutsceneTriggerSystem } from '../../systems/story/CutsceneTriggerSystem';
+import { SCENE_TO_LEVEL_MAP } from '../../config/GameScenes';
 
 export class GameScene extends Phaser.Scene {
   private players: Player[] = [];
@@ -65,12 +67,17 @@ export class GameScene extends Phaser.Scene {
   private dialogueSystem!: DialogueSystem;
   private narrativeSystem!: NarrativeSystem;
   private currentLevelIndex: number = 0;
+  private cutsceneTriggerSystem!: CutsceneTriggerSystem;
+  private isInitialized: boolean = false; // Track if game is fully initialized
 
   constructor() {
     super({ key: 'GameScene' });
   }
 
   init(data: GameSceneData) {
+    // Reset initialization flag
+    this.isInitialized = false;
+    
     // Initialize with character selections
     this.data.set('player1Character', data.player1Character || 'axel');
     // For single player, player2Character can be null/undefined
@@ -115,6 +122,7 @@ export class GameScene extends Phaser.Scene {
     this.levelTransitionSystem = new LevelTransitionSystem(this.storyManager);
     this.dialogueSystem = new DialogueSystem(this.storyManager);
     this.narrativeSystem = new NarrativeSystem(this.storyManager);
+    this.cutsceneTriggerSystem = new CutsceneTriggerSystem(this.storyManager);
     
     // Initialize multiplayer if enabled
     this.isMultiplayer = this.data.get('isMultiplayer') || false;
@@ -138,12 +146,6 @@ export class GameScene extends Phaser.Scene {
     // Set up settings event listeners
     this.setupSettingsEvents();
     
-    // Initialize storytelling systems (after audio manager)
-    this.storyManager = new StoryManager(this, this.audioManager);
-    this.levelTransitionSystem = new LevelTransitionSystem(this.storyManager);
-    this.dialogueSystem = new DialogueSystem(this.storyManager);
-    this.narrativeSystem = new NarrativeSystem(this.storyManager);
-    
     // Register all story cutscenes
     this.registerStoryCutscenes();
     
@@ -152,12 +154,14 @@ export class GameScene extends Phaser.Scene {
     this.time.delayedCall(200, () => {
       this.audioManager.playMusicWithContext('level1', MusicContext.GAMEPLAY, true);
     });
-
-    // Register all story cutscenes (after all systems are initialized)
-    this.registerStoryCutscenes();
     
     // Initialize room system (loads first room and backgrounds)
     this.roomManager.initializeLevel('level1');
+    
+    // Show intro cutscene when game starts (with small delay to ensure everything is loaded)
+    this.time.delayedCall(1000, () => {
+      this.showIntroCutscene();
+    });
     
     // Set physics world bounds to match room width and height (important for movement)
     const roomWidth = this.roomManager.getRoomWidth();
@@ -190,7 +194,10 @@ export class GameScene extends Phaser.Scene {
     this.createUI();
 
     // Initialize boss health bar (hidden until boss spawns)
-    this.bossHealthBar = new BossHealthBar(this);
+    // Defer creation slightly to ensure scene is fully ready
+    this.time.delayedCall(50, () => {
+      this.bossHealthBar = new BossHealthBar(this);
+    });
 
     // Debug text
     this.add.text(10, 10, `Level ${this.levelManager.getCurrentLevel()} - Full Combat System`, {
@@ -213,6 +220,12 @@ export class GameScene extends Phaser.Scene {
     });
     
     console.log('GameScene: Initialization complete!');
+    
+    // Mark as initialized after a short delay to ensure all systems are ready
+    this.time.delayedCall(500, () => {
+      this.isInitialized = true;
+      console.log('GameScene: Fully initialized, game over checks enabled');
+    });
     } catch (error) {
       console.error('GameScene: Error during initialization:', error);
       // Show error message to user
@@ -299,6 +312,17 @@ export class GameScene extends Phaser.Scene {
       console.log(`[GameScene] Room loaded: ${data.roomName} (${data.roomId})`);
       // Update physics world bounds for new room (including vertical bounds for depth navigation)
       this.physics.world.setBounds(0, 0, data.width, data.height);
+      
+      // Update scene number and check for automatic triggers
+      if (this.cutsceneTriggerSystem) {
+        this.updateSceneNumber();
+        // Check for automatic triggers after a short delay to ensure room is fully loaded
+        this.time.delayedCall(500, () => {
+          if (this.cutsceneTriggerSystem) {
+            this.cutsceneTriggerSystem.checkAutomaticTriggers();
+          }
+        });
+      }
     });
 
     this.events.on('roomTransitionComplete', (data: { fromRoomId?: string; toRoomId: string; playerX: number; playerY: number }) => {
@@ -343,7 +367,12 @@ export class GameScene extends Phaser.Scene {
       if (!this.bossHealthBar) {
         this.bossHealthBar = new BossHealthBar(this);
       }
-      this.bossHealthBar.setBoss(boss);
+      // Defer setting boss to ensure scene is fully ready
+      this.time.delayedCall(16, () => {
+        if (this.bossHealthBar && boss) {
+          this.bossHealthBar.setBoss(boss);
+        }
+      });
       
       // Trigger boss dialogue if available (with small delay to ensure boss is fully spawned)
       if (this.dialogueSystem && this.storyManager) {
@@ -871,11 +900,28 @@ export class GameScene extends Phaser.Scene {
    * Check for game over conditions
    */
   checkGameOver() {
+    // Don't check game over if game is not fully initialized
+    if (!this.isInitialized) {
+      return;
+    }
+
+    // Don't check game over if no players exist yet
+    if (!this.players || this.players.length === 0) {
+      return;
+    }
+
+    // Don't check game over during cutscenes
+    if (this.storyManager && this.storyManager.isCutscenePlaying()) {
+      return;
+    }
+
     // Check if all players are dead
-    const allPlayersDead = this.players.every(player => !player.isAlive());
+    const allPlayersDead = this.players.every(player => player && !player.isAlive());
     
-    if (allPlayersDead) {
-      const score = this.itemManager.getScore();
+    if (allPlayersDead && this.players.length > 0) {
+      const score = this.itemManager ? this.itemManager.getScore() : 0;
+      // Stop checking game over to prevent multiple triggers
+      this.isInitialized = false;
       this.scene.start('GameOverScene', {
         victory: false,
         score: score
@@ -950,16 +996,91 @@ export class GameScene extends Phaser.Scene {
     
     // Set scene index for narrative checking (level 1 = scene 1, etc.)
     this.currentLevelIndex = 0; // First level is index 0
-    this.storyManager.setSceneIndex(this.currentLevelIndex);
+    // Set scene index to 1 (1-based) for intro_scene_1 cutscene condition
+    this.storyManager.setSceneIndex(0); // This will be converted to 1-based (scene 1) internally
     
     // Set character for dialogue
     const player1Char = this.data.get('player1Character') as CharacterType;
     this.storyManager.setCharacter(player1Char);
+  }
+
+  /**
+   * Show outro cutscene when game is completed
+   */
+  private showOutroCutscene(score: number): void {
+    // Check for completion outro
+    const outroCutscene = this.storyManager.getCutscene('outro_completion');
+    if (outroCutscene) {
+      this.storyManager.playCutscene(outroCutscene);
+      
+      // After outro completes, show victory screen
+      this.events.once('cutsceneEnded', () => {
+        // Check for final outro
+        const finalOutro = this.storyManager.getCutscene('outro_end');
+        if (finalOutro) {
+          this.storyManager.playCutscene(finalOutro);
+          this.events.once('cutsceneEnded', () => {
+            this.scene.start('GameOverScene', {
+              victory: true,
+              score: score
+            });
+          });
+        } else {
+          // No final outro, go straight to victory screen
+          this.scene.start('GameOverScene', {
+            victory: true,
+            score: score
+          });
+        }
+      });
+    } else {
+      // No outro cutscene, go straight to victory screen
+      this.scene.start('GameOverScene', {
+        victory: true,
+        score: score
+      });
+    }
+  }
+
+  /**
+   * Show intro cutscene when game starts
+   */
+  private showIntroCutscene(): void {
+    console.log('[GameScene] showIntroCutscene called');
     
-    // Check for initial narrative at level start (with small delay to ensure everything is loaded)
-    this.time.delayedCall(500, () => {
+    // For now, always show intro (can add option to skip if already viewed later)
+    // Show main game intro
+    const introCutscene = this.storyManager.getCutscene('intro_game');
+    console.log('[GameScene] Intro cutscene retrieved:', introCutscene ? introCutscene.id : 'null');
+    
+    if (introCutscene) {
+      console.log('[GameScene] Playing intro cutscene');
+      this.storyManager.playCutscene(introCutscene);
+      
+      // After intro completes, check for scene 1 intro or narrative
+      this.events.once('cutsceneEnded', () => {
+        console.log('[GameScene] Intro cutscene ended');
+        // Ensure scene index is set to 1 (0-based = 0) for intro_scene_1 condition
+        this.storyManager.setSceneIndex(0); // 0-based index = scene 1 (1-based)
+        // Check for scene 1 specific intro
+        const scene1Intro = this.storyManager.getCutscene('intro_scene_1');
+        if (scene1Intro && !this.storyManager.getFlag('intro_viewed')) {
+          console.log('[GameScene] Playing scene 1 intro');
+          this.storyManager.playCutscene(scene1Intro);
+          this.events.once('cutsceneEnded', () => {
+            this.narrativeSystem.checkAndTriggerNarrative(this.currentLevelIndex);
+          });
+        } else {
+          console.log('[GameScene] Skipping scene 1 intro (already viewed or not found)');
+          // No scene 1 intro, just show narrative
+          this.narrativeSystem.checkAndTriggerNarrative(this.currentLevelIndex);
+        }
+      });
+    } else {
+      console.warn('[GameScene] No intro cutscene found!');
+      // No intro cutscene, just show narrative
       this.narrativeSystem.checkAndTriggerNarrative(this.currentLevelIndex);
-    });
+    }
   }
 
   private createHealthBars() {
@@ -981,8 +1102,63 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Don't update game if cutscene is playing
+    // This prevents players/enemies from moving while allowing dialogue timers to work
     if (this.storyManager && this.storyManager.isCutscenePlaying()) {
       return;
+    }
+
+    // Update scene number based on current level/room
+    this.updateSceneNumber();
+
+    // Check for position-based cutscene triggers
+    if (this.players.length > 0 && this.cutsceneTriggerSystem) {
+      const playerX = this.players[0].sprite.x;
+      this.cutsceneTriggerSystem.checkPositionTriggers(playerX);
+    }
+  }
+
+  /**
+   * Update scene number based on current level and room
+   */
+  private updateSceneNumber(): void {
+    if (!this.levelManager || !this.roomManager || !this.cutsceneTriggerSystem) {
+      return;
+    }
+
+    // Get current room ID from room manager
+    const currentRoomId = this.roomManager.getCurrentRoomId();
+    
+    if (!currentRoomId) {
+      return;
+    }
+
+    // Extract room number from room ID (e.g., "level1_room3" -> level: 1, room: 3)
+    const roomMatch = currentRoomId.match(/level(\d+)_room(\d+)/);
+    if (!roomMatch) {
+      return;
+    }
+
+    const levelNum = parseInt(roomMatch[1], 10);
+    const roomNum = parseInt(roomMatch[2], 10);
+
+    // Find scene number from SCENE_TO_LEVEL_MAP
+    for (const [sceneNumStr, sceneMap] of Object.entries(SCENE_TO_LEVEL_MAP)) {
+      const sceneMapTyped = sceneMap as { level: number; room: number; name: string };
+      if (sceneMapTyped.level === levelNum && sceneMapTyped.room === roomNum) {
+        const sceneNumber = parseInt(sceneNumStr, 10);
+        if (this.cutsceneTriggerSystem.getSceneNumber() !== sceneNumber) {
+          this.cutsceneTriggerSystem.setSceneNumber(sceneNumber);
+          console.log(`[GameScene] Scene updated to ${sceneNumber}: ${sceneMapTyped.name}`);
+          
+          // Check for automatic triggers when scene changes
+          this.time.delayedCall(100, () => {
+            if (this.cutsceneTriggerSystem) {
+              this.cutsceneTriggerSystem.checkAutomaticTriggers();
+            }
+          });
+        }
+        break;
+      }
     }
 
     // Check for pause
@@ -1113,10 +1289,6 @@ export class GameScene extends Phaser.Scene {
       // If in ground range and not moving vertically, enforce zero velocity/gravity
       // This runs AFTER physics step to prevent any drift
       if (isInGroundRange && !isMovingVertically) {
-        const oldY = player.sprite.y;
-        const oldVelocityY = body.velocity.y;
-        const oldGravityY = body.gravity.y;
-        
         // Force zero velocity and gravity IMMEDIATELY
         body.setVelocityY(0);
         body.setGravityY(0);
@@ -1125,7 +1297,6 @@ export class GameScene extends Phaser.Scene {
         // Store previous Y to detect drift
         const storedY = (player as any).lastStableY;
         if (storedY !== undefined && Math.abs(player.sprite.y - storedY) > 0.1) {
-          console.log(`[GameScene] Restoring position after physics drift: ${player.sprite.y.toFixed(2)} -> ${storedY.toFixed(2)}`);
           player.sprite.setPosition(player.sprite.x, storedY);
           // Force velocity to 0 again after position restore
           body.setVelocityY(0);
@@ -1134,12 +1305,6 @@ export class GameScene extends Phaser.Scene {
           if (Math.abs(body.velocity.y) < 0.1 && Math.abs(body.gravity.y) < 0.1) {
             (player as any).lastStableY = player.sprite.y;
           }
-        }
-        
-        // Log if we detect any drift being corrected
-        const playerIndex = this.players.indexOf(player);
-        if (Math.abs(body.velocity.y - oldVelocityY) > 0.01 || Math.abs(body.gravity.y - oldGravityY) > 0.01 || Math.abs(player.sprite.y - oldY) > 0.1) {
-          console.log(`[GameScene] Correcting drift for Player ${playerIndex} - Y: ${oldY.toFixed(2)} -> ${player.sprite.y.toFixed(2)}, VelocityY: ${oldVelocityY.toFixed(2)} -> ${body.velocity.y.toFixed(2)}, GravityY: ${oldGravityY.toFixed(2)} -> ${body.gravity.y.toFixed(2)}`);
         }
       } else if (isMovingVertically) {
         // Clear stored position when moving
@@ -1360,18 +1525,14 @@ export class GameScene extends Phaser.Scene {
       console.log('[GameScene] All levels complete! Victory!');
       const score = this.itemManager.getScore();
       
-      // Play victory sound
-      if (this.audioManager) {
-        this.audioManager.playSound('levelAdvance');
+      // Set completion flags
+      if (this.storyManager) {
+        this.storyManager.setFlag('game_completed', true);
+        this.storyManager.setFlag('story_complete', true);
       }
       
-      // Show victory screen
-      this.time.delayedCall(1500, () => {
-        this.scene.start('GameOverScene', {
-          victory: true,
-          score: score
-        });
-      });
+      // Show outro cutscene before victory screen
+      this.showOutroCutscene(score);
     }
   }
 
@@ -1423,6 +1584,20 @@ export class GameScene extends Phaser.Scene {
    * Clean up when scene is destroyed
    */
   shutdown() {
+    // Reset initialization flag
+    this.isInitialized = false;
+    
+    // Clear all arrays
+    this.players = [];
+    this.enemies = [];
+    this.bosses = [];
+    this.healthBars = [];
+    this.comboCounters = [];
+    this.weaponIndicators = [];
+    this.playerShadows.clear();
+    this.enemyShadows.clear();
+    this.currentComboCounts.clear();
+    
     if (this.inputManager) {
       this.inputManager.destroy();
     }

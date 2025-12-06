@@ -143,7 +143,11 @@ export class GameOverScene extends BaseMenuScene {
   }
 
   private playAgain() {
-    this.scene.start('CharacterSelectScene');
+    // Stop this scene and start character select fresh
+    this.scene.stop('GameOverScene');
+    this.scene.start('CharacterSelectScene', {
+      isMultiplayer: false
+    });
   }
 
   private returnToMenu() {

@@ -197,7 +197,10 @@ export class Enemy extends BaseEntity {
     if (this.isGrounded) {
       if (Math.abs(body.velocity.x) < 10 && this.getState() !== 'attacking') {
         this.setState('idle');
-      } else if (this.getState() !== 'attacking' && this.getState() !== 'walking') {
+      } else if (Math.abs(body.velocity.x) >= 10) {
+        // Update facing direction FIRST, then set state
+        // This ensures direction is correct before animation update
+        this.setFacingRight(body.velocity.x > 0);
         this.setState('walking');
       }
     } else if (this.getState() !== 'jumping' && this.getState() !== 'attacking') {
@@ -232,19 +235,52 @@ export class Enemy extends BaseEntity {
     
     // Play animation if it exists
     if (animKey && this.scene.anims.exists(animKey)) {
-      if (this.sprite.anims.currentAnim?.key !== animKey) {
+      // Always update animation if the key is different OR if direction changed
+      // This ensures enemies face the correct direction even if state hasn't changed
+      const currentAnimKey = this.sprite.anims.currentAnim?.key || '';
+      const currentDirection = currentAnimKey.includes('_right') ? 'right' : 
+                               currentAnimKey.includes('_left') ? 'left' : '';
+      
+      // Force animation update if key changed, direction changed, or animation is not playing
+      if (currentAnimKey !== animKey || currentDirection !== direction || !this.sprite.anims.isPlaying) {
         // When using directional animations (left/right), don't flip the sprite
         // The animation key already handles direction
         this.sprite.setFlipX(false);
+        // Play animation with restart flag to ensure it cycles
         this.sprite.play(animKey, true);
       }
     } else {
       // Fallback: try to use texture directly
-      const textureKey = `enemy_${this.enemyType}_idle_${direction}`;
+      const textureKey = `enemy_${this.enemyType}_${state}_${direction}`;
       if (this.scene.textures.exists(textureKey)) {
         // When using directional textures, don't flip - use the correct texture
         this.sprite.setFlipX(false);
         this.sprite.setTexture(textureKey);
+      } else {
+        // Try walking texture if state-specific doesn't exist
+        const walkTextureKey = `enemy_${this.enemyType}_walk_${direction}`;
+        const idleTextureKey = `enemy_${this.enemyType}_idle_${direction}`;
+        const fallbackTextureKey = state === 'walking' ? walkTextureKey : idleTextureKey;
+        
+        if (this.scene.textures.exists(fallbackTextureKey)) {
+          this.sprite.setFlipX(false);
+          this.sprite.setTexture(fallbackTextureKey);
+        } else {
+          // If no directional texture exists, try flipping the sprite as fallback
+          // Try right-facing textures first
+          const baseWalkKey = `enemy_${this.enemyType}_walk_right`;
+          const baseIdleKey = `enemy_${this.enemyType}_idle_right`;
+          const baseTextureKey = state === 'walking' ? baseWalkKey : baseIdleKey;
+          
+          if (this.scene.textures.exists(baseTextureKey)) {
+            this.sprite.setTexture(baseTextureKey);
+            this.sprite.setFlipX(!facingRight);
+          } else if (this.scene.textures.exists('enemy_placeholder')) {
+            // Ultimate fallback: use placeholder and flip
+            this.sprite.setTexture('enemy_placeholder');
+            this.sprite.setFlipX(!facingRight);
+          }
+        }
       }
     }
     
@@ -291,6 +327,10 @@ export class Enemy extends BaseEntity {
       this.aiState = 'patrol';
       this.patrol();
     }
+    
+    // Force animation update after AI updates direction
+    // This ensures facing direction is immediately reflected
+    this.updateAnimations();
   }
 
   private findTarget() {
@@ -337,6 +377,10 @@ export class Enemy extends BaseEntity {
     // Move in patrol direction
     body.setVelocityX(this.stats.speed * this.patrolDirection);
     this.setFacingRight(this.patrolDirection > 0);
+    // Ensure walking state is set when patrolling
+    if (Math.abs(body.velocity.x) > 0) {
+      this.setState('walking');
+    }
   }
 
   private pursueTarget() {
@@ -349,6 +393,10 @@ export class Enemy extends BaseEntity {
 
     body.setVelocityX(this.stats.speed * direction);
     this.setFacingRight(direction > 0);
+    // Ensure walking state is set when pursuing
+    if (Math.abs(body.velocity.x) > 0) {
+      this.setState('walking');
+    }
   }
 
   private performAttack() {
