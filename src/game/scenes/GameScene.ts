@@ -28,6 +28,8 @@ import { AudioManager } from '../../systems/audio/AudioManager';
 import { MusicContext } from '../../systems/audio/MusicState';
 import { MultiplayerClient } from '../../multiplayer/Client';
 import { BossHealthBar } from '../../ui/BossHealthBar';
+import { StoryManager, LevelTransitionSystem, DialogueSystem, NarrativeSystem } from '../../systems/story';
+import { STORY_REGISTRY } from '../../systems/story/StoryData';
 
 export class GameScene extends Phaser.Scene {
   private players: Player[] = [];
@@ -58,6 +60,11 @@ export class GameScene extends Phaser.Scene {
   private playerShadows: Map<Player, Phaser.GameObjects.Ellipse> = new Map();
   private enemyShadows: Map<Enemy, Phaser.GameObjects.Ellipse> = new Map();
   private currentComboCounts: Map<number, number> = new Map();
+  private storyManager!: StoryManager;
+  private levelTransitionSystem!: LevelTransitionSystem;
+  private dialogueSystem!: DialogueSystem;
+  private narrativeSystem!: NarrativeSystem;
+  private currentLevelIndex: number = 0;
 
   constructor() {
     super({ key: 'GameScene' });
@@ -103,6 +110,12 @@ export class GameScene extends Phaser.Scene {
     // Initialize audio manager
     this.audioManager = new AudioManager(this);
     
+    // Initialize storytelling systems (after audio manager)
+    this.storyManager = new StoryManager(this, this.audioManager);
+    this.levelTransitionSystem = new LevelTransitionSystem(this.storyManager);
+    this.dialogueSystem = new DialogueSystem(this.storyManager);
+    this.narrativeSystem = new NarrativeSystem(this.storyManager);
+    
     // Initialize multiplayer if enabled
     this.isMultiplayer = this.data.get('isMultiplayer') || false;
     if (this.isMultiplayer) {
@@ -125,12 +138,24 @@ export class GameScene extends Phaser.Scene {
     // Set up settings event listeners
     this.setupSettingsEvents();
     
+    // Initialize storytelling systems (after audio manager)
+    this.storyManager = new StoryManager(this, this.audioManager);
+    this.levelTransitionSystem = new LevelTransitionSystem(this.storyManager);
+    this.dialogueSystem = new DialogueSystem(this.storyManager);
+    this.narrativeSystem = new NarrativeSystem(this.storyManager);
+    
+    // Register all story cutscenes
+    this.registerStoryCutscenes();
+    
     // Start gameplay music (with small delay to ensure audio is ready)
     // All previous music has been stopped, so this will be the only music playing
     this.time.delayedCall(200, () => {
       this.audioManager.playMusicWithContext('level1', MusicContext.GAMEPLAY, true);
     });
 
+    // Register all story cutscenes (after all systems are initialized)
+    this.registerStoryCutscenes();
+    
     // Initialize room system (loads first room and backgrounds)
     this.roomManager.initializeLevel('level1');
     
@@ -319,6 +344,17 @@ export class GameScene extends Phaser.Scene {
         this.bossHealthBar = new BossHealthBar(this);
       }
       this.bossHealthBar.setBoss(boss);
+      
+      // Trigger boss dialogue if available (with small delay to ensure boss is fully spawned)
+      if (this.dialogueSystem && this.storyManager) {
+        this.time.delayedCall(500, () => {
+          const levelIndex = this.levelManager ? this.levelManager.getCurrentLevel() - 1 : 0;
+          // Create a flags map for dialogue checking
+          const flags = new Map<string, boolean>();
+          // Check for boss-specific dialogues (they use scene_index matching level + 1)
+          this.dialogueSystem.checkAndTriggerDialogue(levelIndex + 1, flags);
+        });
+      }
     });
 
     // Listen for enemy defeats
@@ -384,7 +420,22 @@ export class GameScene extends Phaser.Scene {
     });
 
     // Level progression
+    // Listen for level changes to update scene index
     this.events.on('levelChanged', (data: { levelNumber: number; levelId: string; levelName: string } | number) => {
+      // Update scene index for narrative system
+      if (typeof data === 'object' && data.levelNumber) {
+        this.currentLevelIndex = data.levelNumber - 1;
+        if (this.storyManager) {
+          this.storyManager.setSceneIndex(this.currentLevelIndex);
+        }
+      }
+      
+      // Check for narrative cutscenes at level start
+      if (this.narrativeSystem) {
+        this.narrativeSystem.checkAndTriggerNarrative(this.currentLevelIndex);
+      }
+      
+      // Legacy handler
       const levelInfo = typeof data === 'number' 
         ? { levelNumber: data, levelId: `level${data}`, levelName: `Level ${data}` }
         : data;
@@ -409,7 +460,27 @@ export class GameScene extends Phaser.Scene {
     });
 
     // Level end reached
+    // Listen for level end to show transition
     this.events.on('levelEndReached', () => {
+      if (this.levelManager && this.levelTransitionSystem) {
+        const currentLevel = this.levelManager.getCurrentLevel() - 1;
+        if (this.levelTransitionSystem.shouldShowTransition(currentLevel, LEVEL_CONFIGS.length)) {
+          // Show level transition before progressing
+          this.levelTransitionSystem.showTransition(currentLevel);
+          
+          // Wait for transition to complete before progressing
+          this.events.once('cutsceneEnded', () => {
+            this.progressToNextLevel();
+          });
+        } else {
+          // No transition, progress immediately
+          this.progressToNextLevel();
+        }
+      }
+    });
+    
+    // Legacy level end handler (kept for compatibility)
+    this.events.on('levelEndReached_legacy', () => {
       console.log('[GameScene] Level end reached');
       // This will be checked in checkVictory along with enemy defeat
     });
@@ -866,6 +937,31 @@ export class GameScene extends Phaser.Scene {
     // Implementation depends on how you want to handle remote players
   }
 
+  /**
+   * Register all story cutscenes
+   */
+  private registerStoryCutscenes(): void {
+    // Register all cutscenes from StoryData
+    for (const [id, factory] of Object.entries(STORY_REGISTRY)) {
+      this.storyManager.registerCutscene(id, factory);
+      // Also register as dialogue if it's a dialogue type
+      this.dialogueSystem.registerDialogue(id, factory);
+    }
+    
+    // Set scene index for narrative checking (level 1 = scene 1, etc.)
+    this.currentLevelIndex = 0; // First level is index 0
+    this.storyManager.setSceneIndex(this.currentLevelIndex);
+    
+    // Set character for dialogue
+    const player1Char = this.data.get('player1Character') as CharacterType;
+    this.storyManager.setCharacter(player1Char);
+    
+    // Check for initial narrative at level start (with small delay to ensure everything is loaded)
+    this.time.delayedCall(500, () => {
+      this.narrativeSystem.checkAndTriggerNarrative(this.currentLevelIndex);
+    });
+  }
+
   private createHealthBars() {
     this.players.forEach((player) => {
       const healthBar = new HealthBar(
@@ -879,6 +975,16 @@ export class GameScene extends Phaser.Scene {
   }
 
   update() {
+    // Update story manager (handles cutscene input)
+    if (this.storyManager) {
+      this.storyManager.update();
+    }
+
+    // Don't update game if cutscene is playing
+    if (this.storyManager && this.storyManager.isCutscenePlaying()) {
+      return;
+    }
+
     // Check for pause
     if (this.input.keyboard?.checkDown(this.input.keyboard.addKey('P'))) {
       if (!this.scene.isPaused('PauseScene')) {
@@ -1202,11 +1308,15 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private completeLevel() {
+  /**
+   * Progress to next level (called after level transition)
+   */
+  private progressToNextLevel() {
     if (!this.levelManager) return;
 
     const currentLevelIndex = this.levelManager.getCurrentLevel() - 1;
     const nextLevelIndex = currentLevelIndex + 1;
+    this.currentLevelIndex = nextLevelIndex;
     
     // Check if there's a next level
     if (nextLevelIndex < LEVEL_CONFIGS.length) {
@@ -1218,28 +1328,33 @@ export class GameScene extends Phaser.Scene {
         this.audioManager.playSound('levelAdvance');
       }
       
-      // Wait a moment before transitioning
-      this.time.delayedCall(2000, () => {
-        // Clean up current level entities
-        this.cleanupLevelEntities();
-        
-        // Progress to next level
-        this.levelManager.nextLevel(LEVEL_CONFIGS[nextLevelIndex]);
-        
-        // Update ground size for new level
-        const newLevelWidth = this.levelManager.getLevelWidth();
-        const newLevelHeight = this.cameras.main.height;
-        if (this.ground) {
-          const groundHeight = 200;
-          const groundY = newLevelHeight - (groundHeight / 2);
-          this.ground.setSize(newLevelWidth, groundHeight);
-          this.ground.setPosition(newLevelWidth / 2, groundY);
-          (this.ground.body as Phaser.Physics.Arcade.Body).setSize(newLevelWidth, groundHeight);
-        }
-        
-        // Update physics world bounds
-        this.physics.world.setBounds(0, 0, newLevelWidth, newLevelHeight);
-      });
+      // Clean up current level entities
+      this.cleanupLevelEntities();
+      
+      // Progress to next level
+      this.levelManager.nextLevel(LEVEL_CONFIGS[nextLevelIndex]);
+      
+      // Update ground size for new level
+      const newLevelWidth = this.levelManager.getLevelWidth();
+      const newLevelHeight = this.cameras.main.height;
+      if (this.ground) {
+        const groundHeight = 200;
+        const groundY = newLevelHeight - (groundHeight / 2);
+        this.ground.setSize(newLevelWidth, groundHeight);
+        this.ground.setPosition(newLevelWidth / 2, groundY);
+        (this.ground.body as Phaser.Physics.Arcade.Body).setSize(newLevelWidth, groundHeight);
+      }
+      
+      // Update physics world bounds
+      this.physics.world.setBounds(0, 0, newLevelWidth, newLevelHeight);
+      
+      // Update scene index for narrative system
+      if (this.storyManager) {
+        this.storyManager.setSceneIndex(nextLevelIndex);
+      }
+      
+      // Check for narrative cutscenes at start of new level
+      this.narrativeSystem.checkAndTriggerNarrative(nextLevelIndex);
     } else {
       // All levels complete - victory!
       console.log('[GameScene] All levels complete! Victory!');
@@ -1258,6 +1373,14 @@ export class GameScene extends Phaser.Scene {
         });
       });
     }
+  }
+
+  /**
+   * Legacy completeLevel method - now redirects to new system
+   */
+  private completeLevel() {
+    // Emit level end event which will trigger transition system
+    this.events.emit('levelEndReached');
   }
 
   private cleanupLevelEntities() {
