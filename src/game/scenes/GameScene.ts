@@ -14,7 +14,6 @@ import { ComboCounter } from '../../ui/ComboCounter';
 import { WeaponIndicator } from '../../ui/WeaponIndicator';
 import { BaseEntity } from '../../entities/base/BaseEntity';
 import { Hitbox } from '../../systems/combat/Hitbox';
-import { Enemy } from '../../entities/enemies/Enemy';
 import { Boss } from '../../entities/bosses/Boss';
 import { WeaponManager } from '../../systems/weapon/WeaponManager';
 import { ItemManager } from '../../systems/item/ItemManager';
@@ -34,11 +33,15 @@ import { CutsceneTriggerSystem } from '../../systems/story/CutsceneTriggerSystem
 import { SCENE_TO_LEVEL_MAP } from '../../config/GameScenes';
 import { BossSceneManager } from '../../systems/boss/BossSceneManager';
 import { WidgetManager } from '../../ui/widgets';
+import { PlayerUpdateManager } from '../../managers/PlayerUpdateManager';
+import { EnemyManager } from '../../managers/EnemyManager';
+import { BossManager } from '../../managers/BossManager';
+import { EnemyPool } from '../../pools/EnemyPool';
+import { WeaponPool } from '../../pools/WeaponPool';
+import { ItemPool } from '../../pools/ItemPool';
 
 export class GameScene extends Phaser.Scene {
   private players: Player[] = [];
-  private enemies: Enemy[] = [];
-  private bosses: Boss[] = [];
   private ground!: Phaser.GameObjects.Rectangle;
   private inputManager!: InputManager;
   private entityManager!: EntityManager;
@@ -59,7 +62,6 @@ export class GameScene extends Phaser.Scene {
   private weaponIndicators: WeaponIndicator[] = [];
   private bossHealthBar?: BossHealthBar;
   private playerShadows: Map<Player, Phaser.GameObjects.Ellipse> = new Map();
-  private enemyShadows: Map<Enemy, Phaser.GameObjects.Ellipse> = new Map();
   private currentComboCounts: Map<number, number> = new Map();
   private storyManager!: StoryManager;
   private levelTransitionSystem!: LevelTransitionSystem;
@@ -69,8 +71,15 @@ export class GameScene extends Phaser.Scene {
   private cutsceneTriggerSystem!: CutsceneTriggerSystem;
   private bossSceneManager!: BossSceneManager;
   private widgetManager!: WidgetManager;
-  private playerLives: number = 3;
+  private playerUpdateManager!: PlayerUpdateManager;
+  private enemyManager!: EnemyManager;
+  private bossManager!: BossManager;
+  private enemyPool!: EnemyPool;
+  private weaponPool!: WeaponPool;
+  private itemPool!: ItemPool;
+  private playerLives: number = GameConfig.PLAYER_LIVES;
   private isInitialized: boolean = false; // Track if game is fully initialized
+  private cleanupCounter: number = 0;
 
   constructor() {
     super({ key: 'GameScene' });
@@ -135,6 +144,9 @@ export class GameScene extends Phaser.Scene {
     this.inputManager = new InputManager(this);
     this.entityManager = new EntityManager();
     
+    // Expose EntityManager on scene for entity access (similar to roomManager pattern)
+    (this as any).entityManager = this.entityManager;
+    
     // Set up level event listeners
     this.setupLevelEvents();
     
@@ -152,7 +164,7 @@ export class GameScene extends Phaser.Scene {
     
     // Start gameplay music (with small delay to ensure audio is ready)
     // All previous music has been stopped, so this will be the only music playing
-    this.time.delayedCall(200, () => {
+    this.time.delayedCall(GameConfig.INIT_DELAY_MEDIUM, () => {
       this.audioManager.playMusicWithContext('level1', MusicContext.GAMEPLAY, true);
     });
     
@@ -160,7 +172,7 @@ export class GameScene extends Phaser.Scene {
     this.roomManager.initializeLevel('level1');
     
     // Show intro cutscene when game starts (with small delay to ensure everything is loaded)
-    this.time.delayedCall(1000, () => {
+    this.time.delayedCall(GameConfig.INIT_DELAY_VERY_LONG, () => {
       this.showIntroCutscene();
     });
     
@@ -184,6 +196,39 @@ export class GameScene extends Phaser.Scene {
 
     // Set up collisions
     this.setupCollisions();
+    
+    // Initialize enemy manager with spatial grid for enhanced AI
+    const spatialGrid = this.combatSystem ? (this.combatSystem as any).spatialGrid : undefined;
+    this.enemyManager = new EnemyManager(
+      this,
+      this.entityManager,
+      this.ground,
+      this.levelManager,
+      this.visualEffects,
+      spatialGrid
+    );
+    
+    // Initialize boss manager
+    this.bossManager = new BossManager(
+      this,
+      this.entityManager,
+      this.ground,
+      this.bossSceneManager,
+      this.bossHealthBar,
+      this.dialogueSystem,
+      this.storyManager,
+      this.levelManager
+    );
+    
+    // Initialize object pools
+    this.enemyPool = new EnemyPool(this, 10, 50);
+    this.weaponPool = new WeaponPool(this, 5, 30);
+    this.itemPool = new ItemPool(this, 5, 30);
+    
+    // Expose pools on scene for manager access
+    (this as any).enemyPool = this.enemyPool;
+    (this as any).weaponPool = this.weaponPool;
+    (this as any).itemPool = this.itemPool;
 
     // Set up combat events
     this.setupCombatEvents();
@@ -195,10 +240,10 @@ export class GameScene extends Phaser.Scene {
     this.createUI();
 
     // Initialize widget manager (defer to ensure players are created)
-    this.time.delayedCall(200, () => {
+    this.time.delayedCall(GameConfig.INIT_DELAY_MEDIUM, () => {
       if (!this.widgetManager) {
         this.widgetManager = new WidgetManager(this);
-        this.widgetManager.setLives(this.playerLives, 3);
+        this.widgetManager.setLives(this.playerLives, GameConfig.PLAYER_LIVES);
         this.widgetManager.startClock();
         
         // Set player 1 for health tracking
@@ -209,7 +254,7 @@ export class GameScene extends Phaser.Scene {
         // Set player 2 for health tracking (if exists)
         if (this.players.length > 1) {
           this.widgetManager.setPlayer2(this.players[1]);
-          this.widgetManager.setLives2(this.playerLives, 3);
+          this.widgetManager.setLives2(this.playerLives, GameConfig.PLAYER_LIVES);
           this.widgetManager.setScore2(0);
           this.widgetManager.setPickupCount2(0);
         }
@@ -220,73 +265,89 @@ export class GameScene extends Phaser.Scene {
         
         // Ensure all widgets are visible
         this.widgetManager.ensureWidgetsVisible();
-        
-        // Set up in-game menu button callbacks
-        if (this.widgetManager) {
-          // Menu button - show main menu
-          this.widgetManager.setMenuButtonCallback('menu', () => {
-            this.scene.pause();
-            this.scene.start('MainMenuScene');
-          });
+      }
+      
+      // Initialize player update manager (after players and systems are ready)
+      if (!this.playerUpdateManager) {
+        this.playerUpdateManager = new PlayerUpdateManager(
+          this,
+          this.players,
+          this.inputManager,
+          this.weaponManager,
+          this.itemManager,
+          this.weaponIndicators,
+          this.playerGroundColliders,
+          this.roomManager,
+          this.multiplayerClient,
+          this.isMultiplayer
+        );
+      }
+      
+      // Set up in-game menu button callbacks
+      if (this.widgetManager) {
+        // Menu button - show main menu
+        this.widgetManager.setMenuButtonCallback('menu', () => {
+          this.scene.pause();
+          this.scene.start('MainMenuScene');
+        });
 
-          // Continue button - hide menu and resume
-          this.widgetManager.setMenuButtonCallback('continue', () => {
+        // Continue button - hide menu and resume
+        this.widgetManager.setMenuButtonCallback('continue', () => {
+          if (this.widgetManager) {
+            this.widgetManager.hideInGameMenu();
+            this.widgetManager.startClock(); // Resume clock
+          }
+          this.scene.resume();
+        });
+
+        // Minus button - decrease volume (placeholder - implement when AudioManager methods are available)
+        this.widgetManager.setMenuButtonCallback('minus', () => {
+          // Volume control to be implemented
+          console.log('[GameScene] Volume decrease requested');
+        });
+
+        // Pause button - toggle pause
+        this.widgetManager.setMenuButtonCallback('pause', () => {
+          if (this.scene.isPaused()) {
+            this.scene.resume();
             if (this.widgetManager) {
               this.widgetManager.hideInGameMenu();
               this.widgetManager.startClock(); // Resume clock
             }
-            this.scene.resume();
-          });
-
-          // Minus button - decrease volume (placeholder - implement when AudioManager methods are available)
-          this.widgetManager.setMenuButtonCallback('minus', () => {
-            // Volume control to be implemented
-            console.log('[GameScene] Volume decrease requested');
-          });
-
-          // Pause button - toggle pause
-          this.widgetManager.setMenuButtonCallback('pause', () => {
-            if (this.scene.isPaused()) {
-              this.scene.resume();
-              if (this.widgetManager) {
-                this.widgetManager.hideInGameMenu();
-                this.widgetManager.startClock(); // Resume clock
-              }
-            } else {
-              this.scene.pause();
-              if (this.widgetManager) {
-                this.widgetManager.showInGameMenu();
-                this.widgetManager.stopClock(); // Pause clock
-              }
+          } else {
+            this.scene.pause();
+            if (this.widgetManager) {
+              this.widgetManager.showInGameMenu();
+              this.widgetManager.stopClock(); // Pause clock
             }
-          });
+          }
+        });
 
-          // Plus button - increase volume (placeholder - implement when AudioManager methods are available)
-          this.widgetManager.setMenuButtonCallback('plus', () => {
-            // Volume control to be implemented
-            console.log('[GameScene] Volume increase requested');
-          });
+        // Plus button - increase volume (placeholder - implement when AudioManager methods are available)
+        this.widgetManager.setMenuButtonCallback('plus', () => {
+          // Volume control to be implemented
+          console.log('[GameScene] Volume increase requested');
+        });
 
-          // Quit button - return to main menu
-          this.widgetManager.setMenuButtonCallback('quit', () => {
-            this.scene.start('MainMenuScene');
-          });
-        }
-        
-        console.log('[GameScene] Widget manager initialized and widgets visible');
+        // Quit button - return to main menu
+        this.widgetManager.setMenuButtonCallback('quit', () => {
+          this.scene.start('MainMenuScene');
+        });
       }
+      
+      console.log('[GameScene] Widget manager initialized and widgets visible');
     });
 
     // Initialize boss health bar (hidden until boss spawns)
     // Defer creation slightly to ensure scene is fully ready
-    this.time.delayedCall(50, () => {
+    this.time.delayedCall(GameConfig.INIT_DELAY_SHORT, () => {
       this.bossHealthBar = new BossHealthBar(this);
     });
 
     // Old debug text and instructions removed - widgets now handle UI display
     
     // Mark as initialized after a short delay to ensure all systems are ready
-    this.time.delayedCall(500, () => {
+    this.time.delayedCall(GameConfig.INIT_DELAY_LONG, () => {
       this.isInitialized = true;
     });
     } catch (error) {
@@ -302,7 +363,7 @@ export class GameScene extends Phaser.Scene {
   private createGround(width: number, height: number) {
     // Create ground as a range: bottom of frame up to +200px
     // This allows players to move vertically within the ground range at different depth levels
-    const groundHeight = 200; // 200px range from bottom
+    const groundHeight = GameConfig.GROUND_HEIGHT_RANGE;
     const groundY = height - (groundHeight / 2); // Center of ground range
     this.ground = this.add.rectangle(width / 2, groundY, width, groundHeight, 0x444444);
     this.physics.add.existing(this.ground, true);
@@ -314,12 +375,12 @@ export class GameScene extends Phaser.Scene {
     const player2Char = this.data.get('player2Character') as CharacterType | null;
     const isMultiplayer = this.data.get('isMultiplayer') as boolean;
 
-    // Calculate ground Y position (ground is at height - 100, so entities should be at ground level)
-    const groundY = height - 100;
+    // Calculate ground Y position (ground is at height - offset, so entities should be at ground level)
+    const groundY = height - GameConfig.GROUND_OFFSET;
 
     // Always create player 1 at start position
     const player1 = new Player(
-      this, 200, groundY, player1Char, 0,
+      this, GameConfig.PLAYER_SPAWN_X_1, groundY, player1Char, 0,
       this.animationSystem,
       this.comboSystem,
       this.specialMoveSystem
@@ -337,7 +398,7 @@ export class GameScene extends Phaser.Scene {
     if (isMultiplayer || player2Char) {
       const player2Character = player2Char || 'blaze'; // Default fallback
       const player2 = new Player(
-        this, 400, groundY, player2Character, 1,
+        this, GameConfig.PLAYER_SPAWN_X_2, groundY, player2Character, 1,
         this.animationSystem,
         this.comboSystem,
         this.specialMoveSystem
@@ -365,7 +426,7 @@ export class GameScene extends Phaser.Scene {
       );
       
       // Set camera deadzone for smoother following
-      this.cameras.main.setDeadzone(100, 50);
+      this.cameras.main.setDeadzone(GameConfig.CAMERA_DEADZONE_X, GameConfig.CAMERA_DEADZONE_Y);
     }
   }
 
@@ -376,11 +437,17 @@ export class GameScene extends Phaser.Scene {
       // Update physics world bounds for new room (including vertical bounds for depth navigation)
       this.physics.world.setBounds(0, 0, data.width, data.height);
       
+      // Update spatial grid bounds for combat system
+      if (this.combatSystem) {
+        const bounds = new Phaser.Geom.Rectangle(0, 0, data.width, data.height);
+        this.combatSystem.setWorldBounds(bounds);
+      }
+      
       // Update scene number and check for automatic triggers
       if (this.cutsceneTriggerSystem) {
         this.updateSceneNumber();
         // Check for automatic triggers after a short delay to ensure room is fully loaded
-        this.time.delayedCall(500, () => {
+        this.time.delayedCall(GameConfig.INIT_DELAY_LONG, () => {
           if (this.cutsceneTriggerSystem) {
             this.cutsceneTriggerSystem.checkAutomaticTriggers();
           }
@@ -389,7 +456,7 @@ export class GameScene extends Phaser.Scene {
       
       // Check and spawn boss for this room if needed (with delay to ensure room is fully loaded)
       if (this.bossSceneManager) {
-        this.time.delayedCall(300, () => {
+        this.time.delayedCall(GameConfig.INIT_DELAY_MEDIUM_LONG, () => {
           const roomMatch = data.roomId.match(/level(\d+)_room(\d+)/);
           if (roomMatch) {
             const levelNum = parseInt(roomMatch[1], 10);
@@ -464,122 +531,22 @@ export class GameScene extends Phaser.Scene {
     });
 
     // Listen for level spawns
-    this.events.on('enemySpawned', (enemy: Enemy) => {
-      this.enemies.push(enemy);
-      this.entityManager.add(enemy);
-      enemy.sprite.setData('entity', enemy);
-      enemy.sprite.setData('isEnemy', true);
-      // Set depth based on Y position for proper layering
-      enemy.sprite.setDepth(enemy.sprite.y);
-      this.physics.add.collider(enemy.sprite, this.ground);
-    });
+    // Enemy spawning is now handled by EnemyManager
 
-    // Listen for boss spawns
-    this.events.on('bossSpawned', (boss: Boss) => {
-      // Check if boss is already in the list (prevent duplicates)
-      if (this.bosses.includes(boss)) {
-        return;
-      }
+    // Boss spawning and destruction are now handled by BossManager
 
-      this.bosses.push(boss);
-      this.entityManager.add(boss);
-      boss.sprite.setData('entity', boss);
-      boss.sprite.setData('isBoss', true);
-      
-      // Set depth for proper rendering (same layer as players/enemies)
-      // Use Y position for depth sorting so lower entities appear in front
-      boss.sprite.setDepth(boss.sprite.y);
-      
-      this.physics.add.collider(boss.sprite, this.ground);
-      
-      // Show boss health bar (only for combat bosses)
-      const isCombat = boss.sprite.getData('isCombat') !== false; // Default to true if not set
-      if (isCombat) {
-        if (!this.bossHealthBar) {
-          this.bossHealthBar = new BossHealthBar(this);
-        }
-        // Defer setting boss to ensure scene is fully ready
-        this.time.delayedCall(16, () => {
-          if (this.bossHealthBar && boss) {
-            this.bossHealthBar.setBoss(boss);
-          }
-        });
-      }
-      
-      // Trigger boss dialogue if available (with small delay to ensure boss is fully spawned)
-      if (this.dialogueSystem && this.storyManager) {
-        this.time.delayedCall(500, () => {
-          const levelIndex = this.levelManager ? this.levelManager.getCurrentLevel() - 1 : 0;
-          // Create a flags map for dialogue checking
-          const flags = new Map<string, boolean>();
-          // Check for boss-specific dialogues (they use scene_index matching level + 1)
-          this.dialogueSystem.checkAndTriggerDialogue(levelIndex + 1, flags);
-        });
-      }
-    });
-
-    // Listen for boss destruction
-    this.events.on('bossDestroyed', (boss: Boss) => {
-      // Remove from bosses array
-      this.bosses = this.bosses.filter(b => b !== boss);
-      
-      // Remove from entity manager
-      this.entityManager.remove(boss);
-      
-      // Clear boss health bar if this was the active boss
-      if (this.bossHealthBar) {
-        this.bossHealthBar.clearBoss();
-      }
-    });
-
-    // Listen for enemy defeats
+    // Enemy defeats are now handled by EnemyManager
+    // Keep this listener for non-enemy entities if needed
     this.events.on('entityDefeated', (entity: BaseEntity) => {
-      if (entity.sprite.getData('isEnemy')) {
-        const enemyId = entity.sprite.getData('enemyId');
-        const waveNumber = entity.sprite.getData('waveNumber');
-        if (this.levelManager && enemyId) {
-          this.levelManager.onEnemyDefeated(enemyId, waveNumber);
-        }
-        
-        // Remove enemy from array and destroy sprite
-        const enemyIndex = this.enemies.findIndex(e => e === entity);
-        if (enemyIndex > -1) {
-          const enemy = this.enemies[enemyIndex];
-          
-          // Clean up enemy shadow
-          if (this.enemyShadows.has(enemy)) {
-            const shadow = this.enemyShadows.get(enemy);
-            if (shadow) {
-              shadow.destroy();
-            }
-            this.enemyShadows.delete(enemy);
-          }
-          
-          // Destroy enemy sprite
-          if (enemy && enemy.sprite) {
-            enemy.sprite.destroy();
-          }
-          
-          // Remove from array
-          this.enemies.splice(enemyIndex, 1);
-        }
+      // Enemy defeats handled by EnemyManager
+      if (!entity.sprite.getData('isEnemy')) {
+        // Handle other entity types if needed
       }
     });
 
-    // Listen for boss defeat
+    // Listen for boss defeat (handled by BossManager, but we need to trigger level completion)
     this.events.on('bossDefeated', (data: { boss: Boss; bossType: string }) => {
       console.log(`[GameScene] Boss defeated: ${data.bossType}`);
-      
-      // Remove boss from array
-      const index = this.bosses.indexOf(data.boss);
-      if (index > -1) {
-        this.bosses.splice(index, 1);
-      }
-      
-      // Hide boss health bar
-      if (this.bossHealthBar) {
-        this.bossHealthBar.clearBoss();
-      }
       
       // Trigger level completion (boss defeat = level complete)
       this.events.emit('levelCompleted', {
@@ -677,14 +644,8 @@ export class GameScene extends Phaser.Scene {
       }
     });
     
-    // Legacy level end handler (kept for compatibility)
-    this.events.on('levelEndReached_legacy', () => {
-      console.log('[GameScene] Level end reached');
-      // This will be checked in checkVictory along with enemy defeat
-    });
   }
 
-  // Removed createEnemies - enemies are now spawned by LevelManager via spawn points and waves
 
   private playerGroundColliders: Map<Player, Phaser.Physics.Arcade.Collider> = new Map();
 
@@ -696,10 +657,10 @@ export class GameScene extends Phaser.Scene {
       this.playerGroundColliders.set(player, collider);
     });
 
-    // Set up collisions between enemies and ground
-    this.enemies.forEach(enemy => {
-      this.physics.add.collider(enemy.sprite, this.ground);
-    });
+    // Enemy ground collisions are now handled by EnemyManager
+    if (this.enemyManager) {
+      this.enemyManager.setupGroundCollisions();
+    }
 
     // Set up collisions between weapons and ground
     this.weaponManager.getAll().forEach(weapon => {
@@ -710,7 +671,6 @@ export class GameScene extends Phaser.Scene {
     // this.physics.add.collider(this.players[0].sprite, this.players[1].sprite);
   }
 
-  // Removed spawnWeapons and spawnItems - weapons and items are now spawned by LevelManager
 
   private createUI() {
     const { width } = this.cameras.main;
@@ -791,7 +751,7 @@ export class GameScene extends Phaser.Scene {
       }
 
       // Reset combo after delay if no more hits
-      this.time.delayedCall(3000, () => {
+      this.time.delayedCall(GameConfig.COMBO_RESET_DELAY, () => {
         const latestCount = this.currentComboCounts.get(playerIndex);
         if (latestCount === newCount) {
           // No new hits, reset combo
@@ -820,13 +780,7 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    // Create shadows for enemies
-    this.enemies.forEach(enemy => {
-      if (enemy && enemy.sprite && enemy.sprite.active) {
-        const shadow = this.visualEffects.createShadow(enemy.sprite);
-        this.enemyShadows.set(enemy, shadow);
-      }
-    });
+    // Enemy shadows are now handled by EnemyManager
   }
 
   private setupCombatEvents() {
@@ -1388,103 +1342,14 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Handle input for all players
-    this.players.forEach((player, index) => {
-      if (!player || !player.sprite || !player.sprite.active) {
-        return;
+    // Handle input and update all players (using PlayerUpdateManager)
+    if (this.playerUpdateManager) {
+      this.playerUpdateManager.update();
+      
+      // Send player state updates to server
+      if (this.players[0]) {
+        this.playerUpdateManager.sendPlayerStateUpdate(this.players[0]);
       }
-      const input = this.inputManager.getPlayerInput(index);
-      
-      // Handle ground collision for depth navigation
-      // Ground is now a 200px range from bottom, so players can be at different depths
-      // Disable ground collision when not at foreground level to prevent drift
-      const body = player.sprite.body as Phaser.Physics.Arcade.Body;
-      if (body) {
-        const roomHeight = this.roomManager?.getRoomHeight() || this.cameras.main.height;
-        const groundRangeTop = roomHeight - 200; // Top of ground range
-        const groundRangeBottom = roomHeight; // Bottom of frame
-        const isMovingVertically = input.up || input.down;
-        const isAtForeground = player.sprite.y >= groundRangeBottom - 10; // Within 10px of bottom
-        
-        // Enable/disable ground collision based on depth
-        const collider = this.playerGroundColliders.get(player);
-        if (collider) {
-          // Only enable ground collision at foreground level (bottom)
-          // This prevents collision forces from causing drift at depth levels
-          if (isAtForeground && !isMovingVertically) {
-            collider.active = true;
-          } else {
-            collider.active = false;
-          }
-        }
-        
-        // Handle gravity and vertical movement
-        // Allow gravity when jumping or in the air, disable when on ground and not moving vertically
-        // Check grounded state via sprite body instead of protected property
-        const body = player.sprite.body as Phaser.Physics.Arcade.Body;
-        const isGrounded = body && body.touching && body.touching.down;
-        const isInAir = !isGrounded && player.sprite.y < groundRangeBottom - 10;
-        const isJumping = player.getState() === 'jumping';
-        const isMovingUp = body && body.velocity && body.velocity.y < 0;
-        
-        if (isMovingVertically) {
-          // Moving vertically (depth navigation) - disable gravity
-          body.setGravityY(0);
-        } else if (isJumping || isInAir || isMovingUp) {
-          // Jumping or in air - enable gravity for proper jump physics
-          body.setGravityY(GameConfig.GRAVITY);
-        } else {
-          // On ground and not moving vertically - disable gravity and stop velocity
-          body.setGravityY(0);
-          body.setVelocityY(0);
-          
-          // Clamp to ground range if outside
-          if (player.sprite.y < groundRangeTop) {
-            player.sprite.setPosition(player.sprite.x, groundRangeTop);
-          } else if (player.sprite.y > groundRangeBottom) {
-            player.sprite.setPosition(player.sprite.x, groundRangeBottom);
-          }
-        }
-      }
-      
-      player.handleInput(input);
-      
-      // Update weapon indicator
-      if (this.weaponIndicators[index]) {
-        const weapon = player.getWeapon();
-        this.weaponIndicators[index].updateWeapon(weapon ? weapon.getWeaponType() : null);
-      }
-      
-      // Send input to multiplayer server if connected
-      if (this.isMultiplayer && this.multiplayerClient && index === 0) {
-        this.multiplayerClient.sendInput(input);
-      }
-      
-      // Check for weapon pickup
-      const weapon = this.weaponManager.checkPickup(player);
-      if (weapon && !player.hasWeapon()) {
-        player.pickupWeapon(weapon);
-      }
-
-      // Check for item collection
-      this.itemManager.checkCollection(player);
-    });
-
-    // Send player state updates to server
-    if (this.isMultiplayer && this.multiplayerClient && this.players[0]) {
-      const player = this.players[0];
-      const body = player.sprite.body as Phaser.Physics.Arcade.Body;
-      
-      this.multiplayerClient.sendPlayerUpdate({
-        x: player.sprite.x,
-        y: player.sprite.y,
-        velocityX: body.velocity.x,
-        velocityY: body.velocity.y,
-        state: player.getState(),
-        character: player.getCharacterType(),
-        facingRight: player.isFacingRight(),
-        health: player.getHealth()
-      });
     }
 
     // Update all entities
@@ -1492,58 +1357,8 @@ export class GameScene extends Phaser.Scene {
       this.entityManager.update();
     }
 
-    // Update player depths for proper layering
-    this.players.forEach(player => {
-      if (player && player.sprite && player.sprite.active) {
-        player.sprite.setDepth(player.sprite.y);
-      }
-    });
-
-    // CRITICAL: Enforce zero velocity/gravity for vertical movement AFTER physics step
-    // This must run after all physics updates to prevent drift
-    this.players.forEach(player => {
-      if (!player || !player.sprite || !player.sprite.active) {
-        return;
-      }
-      const body = player.sprite.body as Phaser.Physics.Arcade.Body;
-      if (!body) return;
-
-      const roomHeight = this.roomManager?.getRoomHeight() || this.cameras.main.height;
-      const groundRangeTop = roomHeight - 200;
-      const groundRangeBottom = roomHeight;
-      const isInGroundRange = player.sprite.y >= groundRangeTop && player.sprite.y <= groundRangeBottom;
-      
-      // Get current input to check if moving vertically
-      // Use index from players array instead of protected playerIndex
-      const playerIndex = this.players.indexOf(player);
-      const currentInput = playerIndex >= 0 ? this.inputManager.getPlayerInput(playerIndex) : { up: false, down: false };
-      const isMovingVertically = currentInput.up || currentInput.down;
-      
-      // If in ground range and not moving vertically, enforce zero velocity/gravity
-      // This runs AFTER physics step to prevent any drift
-      if (isInGroundRange && !isMovingVertically) {
-        // Force zero velocity and gravity IMMEDIATELY
-        body.setVelocityY(0);
-        body.setGravityY(0);
-        
-        // Also restore position if it has drifted significantly
-        // Store previous Y to detect drift
-        const storedY = (player as any).lastStableY;
-        if (storedY !== undefined && Math.abs(player.sprite.y - storedY) > 0.1) {
-          player.sprite.setPosition(player.sprite.x, storedY);
-          // Force velocity to 0 again after position restore
-          body.setVelocityY(0);
-        } else {
-          // Store current Y as stable position (only if not drifting)
-          if (Math.abs(body.velocity.y) < 0.1 && Math.abs(body.gravity.y) < 0.1) {
-            (player as any).lastStableY = player.sprite.y;
-          }
-        }
-      } else if (isMovingVertically) {
-        // Clear stored position when moving
-        (player as any).lastStableY = undefined;
-      }
-    });
+    // Update player depths and enforce physics constraints (consolidated loop)
+    this.updatePlayersPostPhysics();
 
     // Update weapon manager
     if (this.weaponManager) {
@@ -1592,69 +1407,28 @@ export class GameScene extends Phaser.Scene {
       this.combatSystem.update(allEntities);
     }
     
-    // Update enemy AI (they need to find players)
-    if (this.enemies) {
-      // Filter out destroyed enemies and update active ones
-      this.enemies = this.enemies.filter(enemy => {
-        if (enemy && enemy.sprite && enemy.sprite.active) {
-          try {
-            enemy.update();
-            // Update depth based on Y position for proper layering
-            enemy.sprite.setDepth(enemy.sprite.y);
-          } catch (error) {
-            console.warn('[GameScene] Error updating enemy:', error);
-            return false; // Remove enemy if update fails
-          }
-          return true;
-        }
-        return false; // Remove destroyed enemies
-      });
+    // Update enemy AI (handled by EnemyManager)
+    if (this.enemyManager) {
+      this.enemyManager.update();
     }
 
     // Health bars are now in the HUD - no need to update overhead health bars
     // Boss health bars are updated separately
 
-    // Update bosses (get from boss scene manager to ensure we have all active bosses)
-    // This ensures we only update bosses that are actually spawned by BossSceneManager
-    if (this.bossSceneManager) {
-      const activeBosses = this.bossSceneManager.getActiveBosses();
-      // Update boss list to match active bosses from manager
-      // Filter out any bosses not managed by BossSceneManager
-      this.bosses = this.bosses.filter(boss => {
-        // Keep boss if it's in the active bosses list
-        return activeBosses.includes(boss);
-      });
-      
-      // Add any new bosses from manager
-      activeBosses.forEach(boss => {
-        if (!this.bosses.includes(boss)) {
-          this.bosses.push(boss);
-        }
-      });
+    // Update bosses (handled by BossManager)
+    if (this.bossManager) {
+      this.bossManager.update();
+      this.bossManager.updateHealthBar();
     }
     
-    // Update each boss
-    this.bosses.forEach(boss => {
-      if (boss && boss.sprite && boss.sprite.active) {
-        try {
-          boss.update();
-          // Update depth based on Y position
-          boss.sprite.setDepth(boss.sprite.y);
-        } catch (error) {
-          console.warn('[GameScene] Error updating boss:', error);
-        }
-      }
-    });
-    
-    // Clean up any destroyed bosses from the list
-    this.bosses = this.bosses.filter(boss => 
-      boss && boss.sprite && boss.sprite.active
-    );
+    // Periodic cleanup of arrays (every N frames instead of every frame)
+    this.cleanupCounter++;
+    if (this.cleanupCounter >= GameConfig.CLEANUP_FREQUENCY) {
+      this.cleanupCounter = 0;
+      this.cleanupEntityArrays();
+    }
 
-    // Update boss health bar
-    if (this.bossHealthBar) {
-      this.bossHealthBar.update();
-    }
+    // Boss health bar update is now handled by BossManager
 
     // Update shadows
     this.updateShadows();
@@ -1677,33 +1451,26 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    // Update enemy shadows
-    this.enemyShadows.forEach((shadow, enemy) => {
-      if (enemy && enemy.sprite && enemy.sprite.active && shadow && shadow.active) {
-        this.visualEffects.updateShadow(shadow, enemy.sprite);
-      } else if (shadow) {
-        shadow.destroy();
-        this.enemyShadows.delete(enemy);
-      }
-    });
+    // Update enemy shadows (handled by EnemyManager)
+    if (this.enemyManager) {
+      this.enemyManager.updateShadows();
+    }
   }
 
   private checkVictory() {
     if (!this.levelManager) return;
 
-    // Check if all enemies are defeated
-    const aliveEnemies = this.enemies.filter(enemy => 
-      enemy && enemy.sprite && enemy.sprite.active && enemy.isAlive()
-    );
-
-    const allEnemiesDefeated = aliveEnemies.length === 0 && this.enemies.length > 0;
+    // Check if all enemies are defeated - use EntityManager for efficiency
+    const activeEnemies = this.entityManager.getEnemies();
+    const aliveEnemies = activeEnemies.filter(enemy => enemy.isAlive());
+    const allEnemiesDefeated = aliveEnemies.length === 0 && activeEnemies.length > 0;
     
     // Check if level is complete
     const isLevelComplete = this.levelManager.isLevelComplete(allEnemiesDefeated);
     
     if (isLevelComplete) {
       // Level completed! Progress to next level or show victory
-      this.completeLevel();
+      this.events.emit('levelEndReached');
     }
   }
 
@@ -1770,22 +1537,77 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+
   /**
-   * Legacy completeLevel method - now redirects to new system
+   * Update player depths and enforce physics constraints after physics step
+   * Consolidated from multiple forEach loops for better performance
    */
-  private completeLevel() {
-    // Emit level end event which will trigger transition system
-    this.events.emit('levelEndReached');
+  private updatePlayersPostPhysics(): void {
+    const roomHeight = this.roomManager?.getRoomHeight() || this.cameras.main.height;
+    const groundRangeTop = roomHeight - GameConfig.GROUND_HEIGHT_RANGE;
+    const groundRangeBottom = roomHeight;
+
+    this.players.forEach((player, index) => {
+      if (!player || !player.sprite || !player.sprite.active) {
+        return;
+      }
+
+      // Update depth for proper layering
+      player.sprite.setDepth(player.sprite.y);
+
+      // Enforce zero velocity/gravity for vertical movement AFTER physics step
+      const body = player.sprite.body as Phaser.Physics.Arcade.Body;
+      if (!body) return;
+
+      const isInGroundRange = player.sprite.y >= groundRangeTop && player.sprite.y <= groundRangeBottom;
+      const currentInput = this.inputManager.getPlayerInput(index);
+      const isMovingVertically = currentInput.up || currentInput.down;
+
+      // If in ground range and not moving vertically, enforce zero velocity/gravity
+      if (isInGroundRange && !isMovingVertically) {
+        // Force zero velocity and gravity IMMEDIATELY
+        body.setVelocityY(0);
+        body.setGravityY(0);
+
+        // Also restore position if it has drifted significantly
+        const storedY = (player as any).lastStableY;
+        if (storedY !== undefined && Math.abs(player.sprite.y - storedY) > 0.1) {
+          player.sprite.setPosition(player.sprite.x, storedY);
+          body.setVelocityY(0);
+        } else {
+          // Store current Y as stable position (only if not drifting)
+          if (Math.abs(body.velocity.y) < 0.1 && Math.abs(body.gravity.y) < 0.1) {
+            (player as any).lastStableY = player.sprite.y;
+          }
+        }
+      } else if (isMovingVertically) {
+        // Clear stored position when moving
+        (player as any).lastStableY = undefined;
+      }
+    });
+  }
+
+  /**
+   * Periodic cleanup of entity arrays (removes stale references)
+   * Called every N frames instead of every frame for performance
+   */
+  private cleanupEntityArrays(): void {
+    // Clean up enemies array (handled by EnemyManager)
+    if (this.enemyManager) {
+      this.enemyManager.cleanup();
+    }
+    
+    // Clean up bosses array (handled by BossManager)
+    if (this.bossManager) {
+      this.bossManager.cleanup();
+    }
   }
 
   private cleanupLevelEntities() {
-    // Clean up enemies
-    this.enemies.forEach(enemy => {
-      if (enemy && enemy.sprite) {
-        enemy.sprite.destroy();
-      }
-    });
-    this.enemies = [];
+    // Clean up enemies (handled by EnemyManager)
+    if (this.enemyManager) {
+      this.enemyManager.clear();
+    }
     
     // Clean up weapons
     const allWeapons = this.weaponManager.getAll();
@@ -1805,13 +1627,10 @@ export class GameScene extends Phaser.Scene {
     });
     allItems.length = 0;
     
-    // Clean up shadows
-    this.enemyShadows.forEach(shadow => {
-      if (shadow) {
-        shadow.destroy();
-      }
-    });
-    this.enemyShadows.clear();
+    // Clean up enemy shadows (handled by EnemyManager)
+    if (this.enemyManager) {
+      this.enemyManager.clear();
+    }
   }
 
   /**
@@ -1821,28 +1640,123 @@ export class GameScene extends Phaser.Scene {
     // Reset initialization flag
     this.isInitialized = false;
     
+    // Clean up event listeners to prevent memory leaks
+    this.cleanupEventListeners();
+    
     // Clear all arrays
     this.players = [];
-    this.enemies = [];
-    this.bosses = [];
     this.comboCounters = [];
     this.weaponIndicators = [];
     this.playerShadows.clear();
-    this.enemyShadows.clear();
     this.currentComboCounts.clear();
     
+    // Clean up managers
+    if (this.enemyManager) {
+      this.enemyManager.destroy();
+    }
+    if (this.bossManager) {
+      this.bossManager.destroy();
+    }
+    if (this.playerUpdateManager) {
+      // PlayerUpdateManager doesn't have event listeners, just clear references
+    }
     if (this.inputManager) {
       this.inputManager.destroy();
     }
     if (this.entityManager) {
       this.entityManager.clear();
     }
+    if (this.weaponManager) {
+      this.weaponManager.clear();
+    }
+    if (this.itemManager) {
+      this.itemManager.destroy();
+    }
+    if (this.enemyPool) {
+      this.enemyPool.clear();
+    }
+    if (this.weaponPool) {
+      this.weaponPool.clear();
+    }
+    if (this.itemPool) {
+      this.itemPool.clear();
+    }
     if (this.multiplayerClient) {
       this.multiplayerClient.disconnect();
     }
     if (this.audioManager) {
       this.audioManager.stopMusic();
+      this.audioManager.destroy();
     }
+    if (this.widgetManager) {
+      this.widgetManager.destroy();
+    }
+    if (this.levelManager) {
+      this.levelManager.destroy();
+    }
+    if (this.roomManager) {
+      // RoomManager cleanup if needed
+    }
+    if (this.visualEffects) {
+      // VisualEffects cleanup if needed
+    }
+  }
+
+  /**
+   * Clean up all event listeners to prevent memory leaks
+   */
+  private cleanupEventListeners(): void {
+    // Level events
+    this.events.off('roomLoaded');
+    this.events.off('roomTransitionStart');
+    this.events.off('roomTransitionComplete');
+    this.events.off('levelStarted');
+    this.events.off('levelTransitionComplete');
+    this.events.off('entityDefeated');
+    this.events.off('bossDefeated');
+    this.events.off('weaponSpawned');
+    this.events.off('itemSpawned');
+    this.events.off('waveStarted');
+    this.events.off('waveCompleted');
+    this.events.off('checkpointActivated');
+    this.events.off('levelChanged');
+    this.events.off('levelEndReached');
+    this.events.off('levelEndReached_legacy');
+    
+    // Combat events
+    this.events.off('hitboxCreated');
+    this.events.off('hitStop');
+    this.events.off('entityDamaged');
+    this.events.off('comboHit');
+    this.events.off('comboReset');
+    
+    // Audio events
+    this.events.off('attackPerformed');
+    this.events.off('specialMovePerformed');
+    this.events.off('jumpPerformed');
+    this.events.off('grabPerformed');
+    this.events.off('throwPerformed');
+    this.events.off('weaponHit');
+    this.events.off('itemCollected');
+    this.events.off('knockdown');
+    this.events.off('entityHit');
+    this.events.off('jumpAttackPerformed');
+    this.events.off('backAttackPerformed');
+    this.events.off('levelAdvance');
+    this.events.off('levelUp');
+    this.events.off('scoreUpdated');
+    this.events.off('livesUpdated');
+    this.events.off('lifeGained');
+    
+    // Settings events
+    this.events.off('musicVolumeChanged');
+    this.events.off('sfxVolumeChanged');
+    this.events.off('musicEnabledChanged');
+    this.events.off('sfxEnabledChanged');
+    
+    // Story events (handled by story systems, but clean up if needed)
+    this.events.off('cutsceneEnded');
+    this.events.off('levelCompleted');
   }
 }
 

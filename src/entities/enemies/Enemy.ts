@@ -53,6 +53,8 @@ export class Enemy extends BaseEntity {
   private aiState: 'patrol' | 'pursue' | 'attack' | 'hit' = 'patrol';
   private attackCooldown: number = 0;
   private currentHitbox?: Hitbox;
+  private targetUpdateCounter: number = 0;
+  private targetUpdateFrequency: number = 3; // Update target every 3 frames (reduce from every frame)
 
   constructor(scene: Phaser.Scene, x: number, y: number, enemyType: EnemyType = 'basic') {
     super(scene, x, y, 'enemy');
@@ -346,36 +348,54 @@ export class Enemy extends BaseEntity {
   }
 
   private findTarget() {
-    // Find nearest player by searching scene data
-    // This is a simplified approach - in production, use a proper entity manager
+    // Optimized: Use EntityManager instead of searching scene children
+    // Update target less frequently to reduce CPU usage
+    this.targetUpdateCounter++;
+    if (this.targetUpdateCounter < this.targetUpdateFrequency) {
+      return; // Skip target update this frame
+    }
+    this.targetUpdateCounter = 0;
+
+    // Get EntityManager from scene (similar to roomManager access pattern)
+    const entityManager = (this.scene as any).entityManager;
+    if (!entityManager || typeof entityManager.getPlayers !== 'function') {
+      // EntityManager not available, no target
+      this.target = null;
+      return;
+    }
+
+    // Use optimized EntityManager.getPlayers() method
+    const players = entityManager.getPlayers();
+    if (players.length === 0) {
+      this.target = null;
+      return;
+    }
+
+    // Find nearest player
     let nearestPlayer: Player | null = null;
     let nearestDistance = Infinity;
 
-    // Search through scene's data manager or use a global player list
-    // For now, we'll use a simple approach: check all sprites with player data
-    this.scene.children.list.forEach(child => {
-      if (child instanceof Phaser.Physics.Arcade.Sprite) {
-        const isPlayer = child.getData('isPlayer');
-        if (isPlayer) {
-          const player = child.getData('playerEntity') as Player;
-          if (player) {
-            const distance = Phaser.Math.Distance.Between(
-              this.sprite.x,
-              this.sprite.y,
-              player.sprite.x,
-              player.sprite.y
-            );
-            if (distance < nearestDistance) {
-              nearestDistance = distance;
-              nearestPlayer = player;
-            }
-          }
-        }
+    for (const player of players) {
+      if (!player || !player.sprite || !player.sprite.active) {
+        continue;
       }
-    });
+
+      const distance = Phaser.Math.Distance.Between(
+        this.sprite.x,
+        this.sprite.y,
+        player.sprite.x,
+        player.sprite.y
+      );
+      
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestPlayer = player;
+      }
+    }
 
     this.target = nearestPlayer;
   }
+
 
   private patrol() {
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
@@ -406,11 +426,12 @@ export class Enemy extends BaseEntity {
 
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
     if (!body) return;
-    
+
     const targetX = this.target.sprite.x;
     const currentX = this.sprite.x;
     const direction = targetX > currentX ? 1 : -1;
 
+    // Set base velocity - will be enhanced by EnemyAI if available
     body.setVelocityX(this.stats.speed * direction);
     this.setFacingRight(direction > 0);
     // Ensure walking state is set when pursuing
@@ -471,6 +492,37 @@ export class Enemy extends BaseEntity {
     this.roomWidth = width;
     // Update patrol distance to 80% of room width
     this.patrolDistance = Math.floor(this.roomWidth * 0.8);
+  }
+
+  /**
+   * Reset enemy state for object pooling
+   */
+  reset(x: number, y: number): void {
+    // Reset base entity
+    super.reset(x, y);
+    
+    // Reset enemy-specific state
+    this.target = null;
+    this.patrolDirection = 1;
+    this.patrolStartX = x;
+    this.aiState = 'patrol';
+    this.attackCooldown = 0;
+    this.currentHitbox = undefined;
+    this.targetUpdateCounter = 0;
+    
+    // Reset health
+    this.maxHealth = this.stats.health;
+    this.health = this.maxHealth;
+    
+    // Update room width if available
+    const roomManager = (this.scene as any).roomManager;
+    if (roomManager && typeof roomManager.getRoomWidth === 'function') {
+      this.roomWidth = roomManager.getRoomWidth();
+      this.patrolDistance = Math.floor(this.roomWidth * 0.8);
+    }
+    
+    // Re-setup enemy sprite
+    this.setupEnemy();
   }
 }
 

@@ -141,12 +141,11 @@ export class LevelManager {
     switch (spawnPoint.type) {
       case 'enemy':
         if (spawnPoint.enemyType) {
-          const enemy = new Enemy(
-            this.scene,
-            spawnPoint.x,
-            spawnPoint.y,
-            spawnPoint.enemyType
-          );
+          // Use object pool if available, otherwise create new
+          const enemyPool = (this.scene as any).enemyPool;
+          const enemy = enemyPool 
+            ? enemyPool.acquire(spawnPoint.x, spawnPoint.y, spawnPoint.enemyType)
+            : new Enemy(this.scene, spawnPoint.x, spawnPoint.y, spawnPoint.enemyType);
           const enemyId = `enemy_${spawnPoint.x}_${spawnPoint.y}_${Date.now()}_${Math.random()}`;
           enemy.sprite.setData('enemyId', enemyId);
           enemy.sprite.setData('waveNumber', spawnPoint.wave || 0);
@@ -314,12 +313,11 @@ export class LevelManager {
       const delay = enemy.delay || (index * 200); // Stagger spawns by default
       
       this.scene.time.delayedCall(delay, () => {
-        const enemyEntity = new Enemy(
-          this.scene,
-          enemy.x,
-          enemy.y,
-          enemy.type
-        );
+        // Use object pool if available, otherwise create new
+        const enemyPool = (this.scene as any).enemyPool;
+        const enemyEntity = enemyPool 
+          ? enemyPool.acquire(enemy.x, enemy.y, enemy.type)
+          : new Enemy(this.scene, enemy.x, enemy.y, enemy.type);
         const enemyId = `${enemyEntity.sprite.name || 'enemy'}_${enemyEntity.sprite.x}_${enemyEntity.sprite.y}_${Date.now()}`;
         enemyEntity.sprite.setData('enemyId', enemyId);
         enemyEntity.sprite.setData('waveNumber', wave.waveNumber);

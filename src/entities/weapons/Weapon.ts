@@ -267,5 +267,21 @@ export class Weapon extends BaseEntity {
   shouldDestroy(): boolean {
     return this.throwCount >= this.maxThrows;
   }
+
+  /**
+   * Reset weapon state for object pooling
+   */
+  reset(x: number, y: number): void {
+    // Reset base entity
+    super.reset(x, y);
+    
+    // Reset weapon-specific state
+    this.throwCount = 0;
+    this.owner = null;
+    this.isThrown = false;
+    
+    // Re-setup weapon sprite
+    this.setupWeapon();
+  }
 }
 

@@ -196,5 +196,20 @@ export class Item extends BaseEntity {
   getStats(): ItemStats {
     return this.stats;
   }
+
+  /**
+   * Reset item state for object pooling
+   */
+  reset(x: number, y: number): void {
+    // Reset base entity
+    super.reset(x, y);
+    
+    // Reset item-specific state
+    this.collected = false;
+    this.floatOffset = 0;
+    
+    // Re-setup item sprite
+    this.setupItem();
+  }
 }
 

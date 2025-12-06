@@ -38,6 +38,9 @@ export const GameConfig = {
   KNOCKDOWN_THRESHOLD: 50, // damage threshold for knockdown
   HEAVY_HIT_THRESHOLD: 25, // damage threshold for heavy hit effects
   
+  // Spatial Partitioning
+  SPATIAL_GRID_CELL_SIZE: 200, // Size of each grid cell for collision detection
+  
   // Hit Stop (time freeze on hits)
   HIT_STOP_LIGHT: 30, // ms for light hits
   HIT_STOP_MEDIUM: 50, // ms for medium hits
@@ -52,6 +55,7 @@ export const GameConfig = {
   // Input Buffering
   INPUT_BUFFER_WINDOW: 200, // ms window to buffer inputs
   COMBO_INPUT_BUFFER: 300, // ms window for combo inputs
+  COMBO_RESET_DELAY: 3000, // ms delay before resetting combo if no new hits
 
   // Multiplayer
   SERVER_PORT: 3001,
@@ -59,5 +63,23 @@ export const GameConfig = {
 
   // Assets
   SPRITE_SCALE: 1,
+
+  // Game Scene
+  PLAYER_LIVES: 3,
+  GROUND_HEIGHT_RANGE: 200, // 200px range from bottom for ground
+  GROUND_OFFSET: 100, // Offset from bottom for ground Y position
+  PLAYER_SPAWN_X_1: 200, // Player 1 initial X position
+  PLAYER_SPAWN_X_2: 400, // Player 2 initial X position
+  CAMERA_DEADZONE_X: 100,
+  CAMERA_DEADZONE_Y: 50,
+  CLEANUP_FREQUENCY: 60, // Clean up arrays every N frames (~1 second at 60fps)
+
+  // Timing delays (milliseconds)
+  INIT_DELAY_SHORT: 50,
+  INIT_DELAY_MEDIUM: 200,
+  INIT_DELAY_MEDIUM_LONG: 300,
+  INIT_DELAY_LONG: 500,
+  INIT_DELAY_VERY_LONG: 1000,
+  INIT_DELAY_EXTRA_LONG: 3000,
 } as const;
 

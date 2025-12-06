@@ -41,5 +41,15 @@ export class PhysicsUtils {
     
     return Phaser.Geom.Rectangle.Overlaps(rect1, rect2);
   }
+
+  /**
+   * Update sprite depth based on Y position for proper layering
+   * Entities lower on screen (higher Y) should appear in front
+   */
+  static updateDepth(sprite: Phaser.Physics.Arcade.Sprite): void {
+    if (sprite && sprite.active) {
+      sprite.setDepth(sprite.y);
+    }
+  }
 }
 

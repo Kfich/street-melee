@@ -3,17 +3,28 @@ import { Hitbox } from './Hitbox';
 import { BaseEntity } from '../../entities/base/BaseEntity';
 import { DamageInfo } from '../../types/GameTypes';
 import { GameConfig } from '../../config/GameConfig';
+import { SpatialGrid } from '../collision/SpatialGrid';
 
 /**
  * Combat system for handling attacks and damage
+ * Uses spatial partitioning for efficient collision detection
  */
 export class CombatSystem {
   private scene: Phaser.Scene;
   private activeHitboxes: Set<Hitbox> = new Set();
   private hitTargets: Map<Hitbox, Set<Phaser.Physics.Arcade.Sprite>> = new Map();
+  private spatialGrid: SpatialGrid;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
+    // Initialize spatial grid with cell size from config
+    const worldBounds = new Phaser.Geom.Rectangle(
+      0,
+      0,
+      scene.cameras.main.width * 2, // Default to 2x camera width
+      scene.cameras.main.height * 2 // Default to 2x camera height
+    );
+    this.spatialGrid = new SpatialGrid(GameConfig.SPATIAL_GRID_CELL_SIZE, worldBounds);
   }
 
   /**
@@ -30,38 +41,48 @@ export class CombatSystem {
   }
 
   /**
-   * Update combat system - check for collisions
+   * Update combat system - check for collisions using spatial partitioning
    */
   update(targets: BaseEntity[]) {
-    // Check each active hitbox against all targets
+    // Clear and rebuild spatial grid each frame
+    this.spatialGrid.clear();
+
+    // Insert all active hitboxes into the grid
     this.activeHitboxes.forEach(hitbox => {
       if (!hitbox.active) return;
-      
-      // Verify hitbox owner still exists
-      if (!hitbox.owner || !hitbox.owner.active) {
-        return;
-      }
+      if (!hitbox.owner || !hitbox.owner.active) return;
+      this.spatialGrid.insertHitbox(hitbox);
+    });
 
+    // Insert all targets into the grid
+    targets.forEach(target => {
+      if (!target || !target.sprite || !target.sprite.active) return;
+      this.spatialGrid.insertEntity(target);
+    });
+
+    // Get potential collision pairs from spatial grid
+    // This only returns pairs that are in the same or adjacent cells
+    const collisionPairs = this.spatialGrid.getCollisionPairs();
+
+    // Process collision pairs
+    collisionPairs.forEach(({ hitbox, entity }) => {
       const hitTargets = this.hitTargets.get(hitbox) || new Set();
 
-      targets.forEach(target => {
-        // Verify target and sprite exist and are active
-        if (!target || !target.sprite || !target.sprite.active) {
-          return;
-        }
-        
-        // Skip if already hit by this hitbox
-        if (hitTargets.has(target.sprite)) return;
-        
-        // Skip if hitting self
-        if (target.sprite === hitbox.owner) return;
+      // Skip if already hit by this hitbox
+      if (hitTargets.has(entity.sprite)) return;
 
-        // Check collision
-        if (hitbox.intersects(target.sprite)) {
-          this.applyDamage(target, hitbox);
-          hitTargets.add(target.sprite);
-        }
-      });
+      // Verify both still exist and are active
+      if (!hitbox.active || !hitbox.owner || !hitbox.owner.active) return;
+      if (!entity || !entity.sprite || !entity.sprite.active) return;
+
+      // Skip if hitting self
+      if (entity.sprite === hitbox.owner) return;
+
+      // Check collision (fine-grained check)
+      if (hitbox.intersects(entity.sprite)) {
+        this.applyDamage(entity, hitbox);
+        hitTargets.add(entity.sprite);
+      }
     });
 
     // Clean up inactive hitboxes
@@ -239,6 +260,21 @@ export class CombatSystem {
     this.activeHitboxes.forEach(hitbox => hitbox.deactivate());
     this.activeHitboxes.clear();
     this.hitTargets.clear();
+    this.spatialGrid.clear();
+  }
+
+  /**
+   * Update world bounds for spatial grid (call when room size changes)
+   */
+  setWorldBounds(bounds: Phaser.Geom.Rectangle): void {
+    this.spatialGrid.setWorldBounds(bounds);
+  }
+
+  /**
+   * Get spatial grid statistics for debugging
+   */
+  getSpatialGridStats() {
+    return this.spatialGrid.getStats();
   }
 }
 

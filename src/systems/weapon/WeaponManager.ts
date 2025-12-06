@@ -8,6 +8,8 @@ import { BaseCharacter } from '../../entities/characters/BaseCharacter';
 export class WeaponManager {
   private scene: Phaser.Scene;
   private weapons: Weapon[] = [];
+  private cachedAll: Weapon[] | null = null;
+  private isDirty: boolean = true;
   // Removed unused weaponSpawnPoints
 
   constructor(scene: Phaser.Scene) {
@@ -15,11 +17,24 @@ export class WeaponManager {
   }
 
   /**
+   * Mark cache as dirty
+   */
+  private markDirty(): void {
+    this.isDirty = true;
+    this.cachedAll = null;
+  }
+
+  /**
    * Spawn a weapon at a location
    */
   spawnWeapon(x: number, y: number, weaponType: WeaponType = 'pipe'): Weapon {
-    const weapon = new Weapon(this.scene, x, y, weaponType);
+    // Use object pool if available, otherwise create new
+    const weaponPool = (this.scene as any).weaponPool;
+    const weapon = weaponPool 
+      ? weaponPool.acquire(x, y, weaponType)
+      : new Weapon(this.scene, x, y, weaponType);
     this.weapons.push(weapon);
+    this.markDirty();
     return weapon;
   }
 
@@ -51,29 +66,60 @@ export class WeaponManager {
    * Update all weapons
    */
   update() {
+    const toRemove: Weapon[] = [];
+    
     this.weapons.forEach(weapon => {
-      if (!weapon.shouldDestroy()) {
+      if (weapon.shouldDestroy()) {
+        toRemove.push(weapon);
+      } else {
         weapon.update();
       }
     });
     
     // Remove destroyed weapons
-    this.weapons = this.weapons.filter(weapon => !weapon.shouldDestroy());
+    if (toRemove.length > 0) {
+      const weaponPool = (this.scene as any).weaponPool;
+      toRemove.forEach(weapon => {
+        const index = this.weapons.indexOf(weapon);
+        if (index > -1) {
+          this.weapons.splice(index, 1);
+          // Release to pool if available, otherwise destroy
+          if (weaponPool) {
+            weaponPool.release(weapon);
+          } else {
+            weapon.destroy();
+          }
+        }
+      });
+      this.markDirty();
+    }
   }
 
   /**
-   * Get all weapons
+   * Get all weapons (cached)
    */
   getAll(): Weapon[] {
-    return this.weapons.filter(weapon => !weapon.shouldDestroy());
+    if (this.isDirty || this.cachedAll === null) {
+      this.cachedAll = this.weapons.filter(weapon => !weapon.shouldDestroy());
+      this.isDirty = false;
+    }
+    return this.cachedAll;
   }
 
   /**
    * Clear all weapons
    */
   clear() {
-    this.weapons.forEach(weapon => weapon.destroy());
+    const weaponPool = (this.scene as any).weaponPool;
+    this.weapons.forEach(weapon => {
+      if (weaponPool) {
+        weaponPool.release(weapon);
+      } else {
+        weapon.destroy();
+      }
+    });
     this.weapons = [];
+    this.markDirty();
   }
 }
 

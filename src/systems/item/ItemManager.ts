@@ -8,12 +8,22 @@ import { BaseCharacter } from '../../entities/characters/BaseCharacter';
 export class ItemManager {
   private scene: Phaser.Scene;
   private items: Item[] = [];
+  private cachedAll: Item[] | null = null;
+  private isDirty: boolean = true;
   private score: number = 0;
   private lives: number = 3;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
     this.setupEventListeners();
+  }
+
+  /**
+   * Mark cache as dirty
+   */
+  private markDirty(): void {
+    this.isDirty = true;
+    this.cachedAll = null;
   }
 
   /**
@@ -36,8 +46,13 @@ export class ItemManager {
    * Spawn an item at a location
    */
   spawnItem(x: number, y: number, itemType: ItemType): Item {
-    const item = new Item(this.scene, x, y, itemType);
+    // Use object pool if available, otherwise create new
+    const itemPool = (this.scene as any).itemPool;
+    const item = itemPool 
+      ? itemPool.acquire(x, y, itemType)
+      : new Item(this.scene, x, y, itemType);
     this.items.push(item);
+    this.markDirty();
     return item;
   }
 
@@ -81,6 +96,7 @@ export class ItemManager {
       
       if (distance < collectionRange) {
         item.collect(character);
+        this.markDirty(); // Item collected, cache needs update
         return item;
       }
     }
@@ -92,21 +108,44 @@ export class ItemManager {
    * Update all items
    */
   update() {
+    const toRemove: Item[] = [];
+    
     this.items.forEach(item => {
-      if (!item.isCollected()) {
+      if (item.isCollected() || !item.sprite.active) {
+        toRemove.push(item);
+      } else {
         item.update();
       }
     });
     
     // Remove collected/destroyed items
-    this.items = this.items.filter(item => !item.isCollected() && item.sprite.active);
+    if (toRemove.length > 0) {
+      const itemPool = (this.scene as any).itemPool;
+      toRemove.forEach(item => {
+        const index = this.items.indexOf(item);
+        if (index > -1) {
+          this.items.splice(index, 1);
+          // Release to pool if available, otherwise destroy
+          if (itemPool) {
+            itemPool.release(item);
+          } else {
+            item.destroy();
+          }
+        }
+      });
+      this.markDirty();
+    }
   }
 
   /**
-   * Get all items
+   * Get all items (cached)
    */
   getAll(): Item[] {
-    return this.items.filter(item => !item.isCollected());
+    if (this.isDirty || this.cachedAll === null) {
+      this.cachedAll = this.items.filter(item => !item.isCollected());
+      this.isDirty = false;
+    }
+    return this.cachedAll;
   }
 
   /**
@@ -127,8 +166,25 @@ export class ItemManager {
    * Clear all items
    */
   clear() {
-    this.items.forEach(item => item.destroy());
+    const itemPool = (this.scene as any).itemPool;
+    this.items.forEach(item => {
+      if (itemPool) {
+        itemPool.release(item);
+      } else {
+        item.destroy();
+      }
+    });
     this.items = [];
+    this.markDirty();
+  }
+
+  /**
+   * Clean up event listeners
+   */
+  destroy(): void {
+    this.scene.events.off('itemCollected');
+    this.scene.events.off('lifeGained');
+    this.clear();
   }
 }
 

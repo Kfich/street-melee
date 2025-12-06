@@ -116,10 +116,43 @@ export abstract class BaseEntity {
   }
 
   /**
+   * Reset entity state for object pooling
+   * Override in subclasses to reset entity-specific state
+   * @param x X position (optional, for subclasses that need it)
+   * @param y Y position (optional, for subclasses that need it)
+   */
+  reset(x?: number, y?: number): void {
+    this.state = 'idle';
+    this.facingRight = true;
+    this.health = this.maxHealth;
+    this.isGrounded = false;
+    
+    // Reset sprite if it exists
+    if (this.sprite) {
+      this.sprite.setActive(true);
+      this.sprite.setVisible(true);
+      this.sprite.clearTint();
+      this.sprite.setAlpha(1);
+      
+      if (x !== undefined && y !== undefined) {
+        this.sprite.setPosition(x, y);
+      }
+      
+      const body = this.sprite.body as Phaser.Physics.Arcade.Body;
+      if (body) {
+        body.setVelocity(0, 0);
+        body.setGravity(0, 0);
+      }
+    }
+  }
+
+  /**
    * Clean up
    */
   destroy() {
-    this.sprite.destroy();
+    if (this.sprite) {
+      this.sprite.destroy();
+    }
   }
 }
 
