@@ -216,6 +216,11 @@ export class PreloadScene extends Phaser.Scene {
       this.load.image(`enemy_basic_walk_${index + 1}`, `assets/sprites/imgs/civi/${frame}.gif`);
     });
     
+    // Create idle texture from first walk frame for civi enemies
+    // This ensures enemies have an idle texture to use
+    this.load.image('enemy_basic_idle_right', 'assets/sprites/imgs/civi/C11.gif');
+    this.load.image('enemy_basic_idle_left', 'assets/sprites/imgs/civi/C11.gif');
+    
     // Load civi attack frames
     const civiAttackFrames = ['C21', 'C22', 'C23', 'C24'];
     civiAttackFrames.forEach((frame, index) => {
@@ -312,6 +317,9 @@ export class PreloadScene extends Phaser.Scene {
     this.load.image('police_walk_right', 'assets/sprites/imgs/police/police-walk-right.gif');
     this.load.image('police_attack_left', 'assets/sprites/imgs/police/police-left.gif'); // Using idle for attack
     this.load.image('police_attack_right', 'assets/sprites/imgs/police/police-right.gif'); // Using idle for attack
+
+    // Load heart sprite for lives widget
+    this.load.image('heart', 'assets/sprites/imgs/menu/heart.png');
   }
 
   /**

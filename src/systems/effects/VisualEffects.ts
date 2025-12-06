@@ -248,9 +248,26 @@ export class VisualEffects {
 
   /**
    * Update shadow position
+   * Shadows stay at ground level, only move horizontally with the sprite
    */
   updateShadow(shadow: Phaser.GameObjects.Ellipse, sprite: Phaser.Physics.Arcade.Sprite) {
-    shadow.setPosition(sprite.x, sprite.y + 30);
+    // Keep shadow at ground level (sprite.y is already at bottom for origin 0.5, 1.0)
+    const groundY = sprite.y;
+    shadow.setPosition(sprite.x, groundY);
+    
+    // Optionally adjust shadow size/opacity based on sprite height (for jumping)
+    const body = sprite.body as Phaser.Physics.Arcade.Body;
+    if (body && body.velocity) {
+      // If sprite is in the air (moving up), make shadow smaller and more transparent
+      if (body.velocity.y < 0) {
+        shadow.setScale(0.7, 0.7);
+        shadow.setAlpha(0.2);
+      } else {
+        // On ground, normal size and opacity
+        shadow.setScale(1, 1);
+        shadow.setAlpha(0.4);
+      }
+    }
   }
 
   /**

@@ -330,45 +330,62 @@ export abstract class BaseCharacter extends BaseEntity {
       }
     }
     
-    // When not manually moving vertically, ensure character stops at exact coordinate
+    // When not manually moving vertically, handle gravity based on jump state
     // Store the target Y position to prevent drift
     if (!isManuallyMovingVertical && body) {
-      // Store target Y position when input stops (first frame after release)
-      if (this.targetYPosition === null) {
-        this.targetYPosition = this.sprite.y;
-      }
+      const isInAir = !this.isGrounded && this.sprite.y < groundRangeBottom - 10;
+      const isJumping = this.state === 'jumping';
       
-      // Always disable gravity and stop velocity when not moving vertically
-      // This prevents any floating or falling
-      body.setGravityY(0);
-      body.setVelocityY(0);
-      
-      // Restore to target position if it has drifted
-      if (this.targetYPosition !== null && Math.abs(this.sprite.y - this.targetYPosition) > 0.1) {
-        this.sprite.setPosition(this.sprite.x, this.targetYPosition);
-      }
-      
-      // Clamp position to ground range if outside
-      if (this.sprite.y < groundRangeTop) {
-        // Above ground range - clamp to top of ground range
-        this.sprite.setPosition(this.sprite.x, groundRangeTop);
-        this.targetYPosition = groundRangeTop;
-      } else if (this.sprite.y > groundRangeBottom) {
-        // Below ground range - clamp to bottom
-        this.sprite.setPosition(this.sprite.x, groundRangeBottom);
-        this.targetYPosition = groundRangeBottom;
+      // Allow gravity when jumping or in the air
+      if (isJumping || isInAir) {
+        // Enable gravity for proper jump physics
+        body.setGravityY(GameConfig.GRAVITY);
+        this.targetYPosition = null; // Clear target when in air
+      } else {
+        // On ground - disable gravity and stop velocity
+        // Store target Y position when input stops (first frame after release)
+        if (this.targetYPosition === null) {
+          this.targetYPosition = this.sprite.y;
+        }
+        
+        body.setGravityY(0);
+        body.setVelocityY(0);
+        
+        // Restore to target position if it has drifted
+        if (this.targetYPosition !== null && Math.abs(this.sprite.y - this.targetYPosition) > 0.1) {
+          this.sprite.setPosition(this.sprite.x, this.targetYPosition);
+        }
+        
+        // Clamp position to ground range if outside
+        if (this.sprite.y < groundRangeTop) {
+          // Above ground range - clamp to top of ground range
+          this.sprite.setPosition(this.sprite.x, groundRangeTop);
+          this.targetYPosition = groundRangeTop;
+        } else if (this.sprite.y > groundRangeBottom) {
+          // Below ground range - clamp to bottom
+          this.sprite.setPosition(this.sprite.x, groundRangeBottom);
+          this.targetYPosition = groundRangeBottom;
+        }
       }
     } else if (isManuallyMovingVertical) {
       // Clear target position when moving manually
       this.targetYPosition = null;
+      // Disable gravity during depth navigation
+      body.setGravityY(0);
     }
 
     // Jump (works independently, but vertical movement takes priority when both are pressed)
     // If player is pressing up/down, they're controlling depth, so don't jump
-    if (input.jump && !input.up && !input.down && this.isGrounded && this.state !== 'jumping') {
+    // Check grounded state via body touching instead of isGrounded flag for more reliable detection
+    const bodyTouchingDown = body && body.touching && body.touching.down;
+    const canJump = bodyTouchingDown || (this.isGrounded && body && body.velocity && body.velocity.y >= -5);
+    
+    if (input.jump && !input.up && !input.down && canJump && this.state !== 'jumping') {
       const jumpPower = GameConfig.PLAYER_BASE_JUMP * (1 + this.stats.jump * GameConfig.JUMP_MULTIPLIER);
       if (this.sprite.active && body) {
         body.setVelocityY(-jumpPower);
+        // Enable gravity for jump
+        body.setGravityY(GameConfig.GRAVITY);
       }
       this.isGrounded = false;
       this.setState('jumping');

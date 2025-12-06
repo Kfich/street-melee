@@ -9,7 +9,7 @@ import { AnimationSystem } from '../../systems/animation/AnimationSystem';
 import { CombatSystem } from '../../systems/combat/CombatSystem';
 import { ComboSystem } from '../../systems/combat/ComboSystem';
 import { SpecialMoveSystem } from '../../systems/combat/SpecialMoveSystem';
-import { HealthBar } from '../../ui/HealthBar';
+// HealthBar removed - health is now displayed in HUD
 import { ComboCounter } from '../../ui/ComboCounter';
 import { WeaponIndicator } from '../../ui/WeaponIndicator';
 import { BaseEntity } from '../../entities/base/BaseEntity';
@@ -33,6 +33,7 @@ import { STORY_REGISTRY } from '../../systems/story/StoryData';
 import { CutsceneTriggerSystem } from '../../systems/story/CutsceneTriggerSystem';
 import { SCENE_TO_LEVEL_MAP } from '../../config/GameScenes';
 import { BossSceneManager } from '../../systems/boss/BossSceneManager';
+import { WidgetManager } from '../../ui/widgets';
 
 export class GameScene extends Phaser.Scene {
   private players: Player[] = [];
@@ -54,12 +55,9 @@ export class GameScene extends Phaser.Scene {
   private audioManager!: AudioManager;
   private multiplayerClient?: MultiplayerClient;
   private isMultiplayer: boolean = false;
-  private healthBars: HealthBar[] = [];
   private comboCounters: ComboCounter[] = [];
   private weaponIndicators: WeaponIndicator[] = [];
   private bossHealthBar?: BossHealthBar;
-  private scoreText!: Phaser.GameObjects.Text;
-  private livesText!: Phaser.GameObjects.Text;
   private playerShadows: Map<Player, Phaser.GameObjects.Ellipse> = new Map();
   private enemyShadows: Map<Enemy, Phaser.GameObjects.Ellipse> = new Map();
   private currentComboCounts: Map<number, number> = new Map();
@@ -70,6 +68,8 @@ export class GameScene extends Phaser.Scene {
   private currentLevelIndex: number = 0;
   private cutsceneTriggerSystem!: CutsceneTriggerSystem;
   private bossSceneManager!: BossSceneManager;
+  private widgetManager!: WidgetManager;
+  private playerLives: number = 3;
   private isInitialized: boolean = false; // Track if game is fully initialized
 
   constructor() {
@@ -191,8 +191,91 @@ export class GameScene extends Phaser.Scene {
     // Create health bars
     this.createHealthBars();
 
-    // Create UI
+    // Create UI (combo counters, weapon indicators, shadows)
     this.createUI();
+
+    // Initialize widget manager (defer to ensure players are created)
+    this.time.delayedCall(200, () => {
+      if (!this.widgetManager) {
+        this.widgetManager = new WidgetManager(this);
+        this.widgetManager.setLives(this.playerLives, 3);
+        this.widgetManager.startClock();
+        
+        // Set player 1 for health tracking
+        if (this.players.length > 0) {
+          this.widgetManager.setPlayer(this.players[0]);
+        }
+        
+        // Set player 2 for health tracking (if exists)
+        if (this.players.length > 1) {
+          this.widgetManager.setPlayer2(this.players[1]);
+          this.widgetManager.setLives2(this.playerLives, 3);
+          this.widgetManager.setScore2(0);
+          this.widgetManager.setPickupCount2(0);
+        }
+        
+        // Initialize score and pickups for player 1
+        this.widgetManager.setScore(0);
+        this.widgetManager.setPickupCount(0);
+        
+        // Ensure all widgets are visible
+        this.widgetManager.ensureWidgetsVisible();
+        
+        // Set up in-game menu button callbacks
+        if (this.widgetManager) {
+          // Menu button - show main menu
+          this.widgetManager.setMenuButtonCallback('menu', () => {
+            this.scene.pause();
+            this.scene.start('MainMenuScene');
+          });
+
+          // Continue button - hide menu and resume
+          this.widgetManager.setMenuButtonCallback('continue', () => {
+            if (this.widgetManager) {
+              this.widgetManager.hideInGameMenu();
+              this.widgetManager.startClock(); // Resume clock
+            }
+            this.scene.resume();
+          });
+
+          // Minus button - decrease volume (placeholder - implement when AudioManager methods are available)
+          this.widgetManager.setMenuButtonCallback('minus', () => {
+            // Volume control to be implemented
+            console.log('[GameScene] Volume decrease requested');
+          });
+
+          // Pause button - toggle pause
+          this.widgetManager.setMenuButtonCallback('pause', () => {
+            if (this.scene.isPaused()) {
+              this.scene.resume();
+              if (this.widgetManager) {
+                this.widgetManager.hideInGameMenu();
+                this.widgetManager.startClock(); // Resume clock
+              }
+            } else {
+              this.scene.pause();
+              if (this.widgetManager) {
+                this.widgetManager.showInGameMenu();
+                this.widgetManager.stopClock(); // Pause clock
+              }
+            }
+          });
+
+          // Plus button - increase volume (placeholder - implement when AudioManager methods are available)
+          this.widgetManager.setMenuButtonCallback('plus', () => {
+            // Volume control to be implemented
+            console.log('[GameScene] Volume increase requested');
+          });
+
+          // Quit button - return to main menu
+          this.widgetManager.setMenuButtonCallback('quit', () => {
+            this.scene.start('MainMenuScene');
+          });
+        }
+        
+        console.log('[GameScene] Widget manager initialized and widgets visible');
+      }
+    });
 
     // Initialize boss health bar (hidden until boss spawns)
     // Defer creation slightly to ensure scene is fully ready
@@ -200,25 +283,7 @@ export class GameScene extends Phaser.Scene {
       this.bossHealthBar = new BossHealthBar(this);
     });
 
-    // Debug text
-    this.add.text(10, 10, `Level ${this.levelManager.getCurrentLevel()} - Full Combat System`, {
-      fontSize: '16px',
-      color: '#ffffff'
-    });
-    
-    // Instructions
-    this.add.text(10, 30, 'X/B: Attack (mash for combos) | Z/A: Special | Dash + Attack: Signature/Throw', {
-      fontSize: '12px',
-      color: '#cccccc'
-    });
-    this.add.text(10, 45, 'Jump + Attack: Jump Attack | Attack + Jump: Back Attack', {
-      fontSize: '12px',
-      color: '#cccccc'
-    });
-    this.add.text(10, 60, 'Close to enemy + Attack: Grab | Direction + Attack: Throw | Jump while grabbing: Vault', {
-      fontSize: '12px',
-      color: '#cccccc'
-    });
+    // Old debug text and instructions removed - widgets now handle UI display
     
     // Mark as initialized after a short delay to ensure all systems are ready
     this.time.delayedCall(500, () => {
@@ -650,25 +715,7 @@ export class GameScene extends Phaser.Scene {
   private createUI() {
     const { width } = this.cameras.main;
 
-    // Score display (improved styling)
-    this.scoreText = this.add.text(15, 80, 'Score: 0', {
-      fontSize: '24px',
-      fontFamily: 'Arial',
-      color: '#ffff00',
-      stroke: '#000000',
-      strokeThickness: 3,
-      fontStyle: 'bold'
-    });
-
-    // Lives display (improved styling)
-    this.livesText = this.add.text(15, 110, 'Lives: 3', {
-      fontSize: '24px',
-      fontFamily: 'Arial',
-      color: '#00ff00',
-      stroke: '#000000',
-      strokeThickness: 3,
-      fontStyle: 'bold'
-    });
+    // Old score/lives text removed - now handled by WidgetManager
 
     // Create combo counters for each player
     this.players.forEach((_player, index) => {
@@ -694,16 +741,42 @@ export class GameScene extends Phaser.Scene {
     // Create shadows for players and enemies
     this.createShadows();
 
-    // Listen for score/lives updates
+    // Listen for score/lives updates - widgets handle display
     this.events.on('scoreUpdated', (score: number) => {
-      if (this.scoreText) {
-        this.scoreText.setText(`Score: ${score.toLocaleString()}`);
+      // Update widget score
+      if (this.widgetManager) {
+        this.widgetManager.setScore(score);
       }
     });
 
     this.events.on('livesUpdated', (lives: number) => {
-      if (this.livesText) {
-        this.livesText.setText(`Lives: ${lives}`);
+      // Update widget lives
+      if (this.widgetManager) {
+        this.widgetManager.setLives(lives, 3);
+        this.playerLives = lives;
+      }
+    });
+    
+    // Listen for item collection events
+    this.events.on('itemCollected', (data: { type: string; points?: number; item: any }) => {
+      this.audioManager.playSound('itemPickup');
+      // Update widgets (with null check)
+      if (this.widgetManager) {
+        if (data.points) {
+          this.widgetManager.addScore(data.points);
+        }
+        this.widgetManager.incrementPickup();
+      }
+    });
+    
+    // Listen for life gained events
+    this.events.on('lifeGained', (data: { lives: number }) => {
+      // Update widgets (with null check)
+      if (this.widgetManager && data.lives) {
+        for (let i = 0; i < data.lives; i++) {
+          this.widgetManager.gainLife();
+        }
+        this.playerLives += data.lives;
       }
     });
 
@@ -1038,12 +1111,43 @@ export class GameScene extends Phaser.Scene {
     const allPlayersDead = this.players.every(player => player && !player.isAlive());
     
     if (allPlayersDead && this.players.length > 0) {
+      // Player died - lose a life
+      if (this.playerLives > 0) {
+        this.playerLives--;
+        if (this.widgetManager) {
+          this.widgetManager.loseLife();
+        }
+        
+        // If lives remaining, respawn player
+        if (this.playerLives > 0 && this.players[0]) {
+          // Restore player health
+          const player = this.players[0];
+          (player as any).health = (player as any).maxHealth;
+          player.sprite.setActive(true);
+          player.sprite.setVisible(true);
+          // Reset player position to room start
+          player.sprite.setPosition(100, player.sprite.y);
+          
+          // Update widget manager with restored player
+          if (this.widgetManager) {
+            this.widgetManager.setPlayer(player);
+          }
+          
+          return; // Don't game over yet
+        }
+      }
+      
+      // No lives remaining - game over
       const score = this.itemManager ? this.itemManager.getScore() : 0;
+      if (this.widgetManager) {
+        this.widgetManager.stopClock();
+      }
       // Stop checking game over to prevent multiple triggers
       this.isInitialized = false;
       this.scene.start('GameOverScene', {
         victory: false,
-        score: score
+        score: score,
+        time: this.widgetManager ? this.widgetManager.getGameTime() : 0
       });
     }
 
@@ -1197,18 +1301,17 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createHealthBars() {
-    this.players.forEach((player) => {
-      const healthBar = new HealthBar(
-        this,
-        player,
-        player.sprite.x,
-        player.sprite.y - 60
-      );
-      this.healthBars.push(healthBar);
-    });
+    // Health bars are now displayed in the HUD, so we don't create overhead health bars for players
+    // Boss health bars are still created separately when bosses spawn
+    // This method is kept for compatibility but no longer creates player health bars
   }
 
   update() {
+    // Update widget manager (HUD, clock, etc.)
+    if (this.widgetManager) {
+      this.widgetManager.update();
+    }
+
     // Update story manager (handles cutscene input)
     if (this.storyManager) {
       this.storyManager.update();
@@ -1277,6 +1380,10 @@ export class GameScene extends Phaser.Scene {
     if (this.input.keyboard?.checkDown(this.input.keyboard.addKey('P'))) {
       if (!this.scene.isPaused('PauseScene')) {
         this.scene.pause();
+        // Pause clock when game is paused
+        if (this.widgetManager) {
+          this.widgetManager.stopClock();
+        }
         this.scene.launch('PauseScene', { gameSceneKey: 'GameScene' });
       }
     }
@@ -1311,9 +1418,23 @@ export class GameScene extends Phaser.Scene {
           }
         }
         
-        // Always disable gravity and stop velocity when not moving vertically
-        // This ensures character stops at exact coordinate
-        if (!isMovingVertically) {
+        // Handle gravity and vertical movement
+        // Allow gravity when jumping or in the air, disable when on ground and not moving vertically
+        // Check grounded state via sprite body instead of protected property
+        const body = player.sprite.body as Phaser.Physics.Arcade.Body;
+        const isGrounded = body && body.touching && body.touching.down;
+        const isInAir = !isGrounded && player.sprite.y < groundRangeBottom - 10;
+        const isJumping = player.getState() === 'jumping';
+        const isMovingUp = body && body.velocity && body.velocity.y < 0;
+        
+        if (isMovingVertically) {
+          // Moving vertically (depth navigation) - disable gravity
+          body.setGravityY(0);
+        } else if (isJumping || isInAir || isMovingUp) {
+          // Jumping or in air - enable gravity for proper jump physics
+          body.setGravityY(GameConfig.GRAVITY);
+        } else {
+          // On ground and not moving vertically - disable gravity and stop velocity
           body.setGravityY(0);
           body.setVelocityY(0);
           
@@ -1490,15 +1611,8 @@ export class GameScene extends Phaser.Scene {
       });
     }
 
-    // Update health bars
-    if (this.healthBars) {
-      this.healthBars.forEach((bar, i) => {
-        if (bar && this.players && this.players[i]) {
-          bar.updatePosition();
-          bar.update();
-        }
-      });
-    }
+    // Health bars are now in the HUD - no need to update overhead health bars
+    // Boss health bars are updated separately
 
     // Update bosses (get from boss scene manager to ensure we have all active bosses)
     // This ensures we only update bosses that are actually spawned by BossSceneManager
@@ -1711,7 +1825,6 @@ export class GameScene extends Phaser.Scene {
     this.players = [];
     this.enemies = [];
     this.bosses = [];
-    this.healthBars = [];
     this.comboCounters = [];
     this.weaponIndicators = [];
     this.playerShadows.clear();

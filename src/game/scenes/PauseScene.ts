@@ -69,6 +69,13 @@ export class PauseScene extends BaseMenuScene {
       this.audioManager.resumeMusic();
     }
     this.scene.resume(this.gameSceneKey);
+    
+    // Resume game clock
+    const gameScene = this.scene.get(this.gameSceneKey);
+    if (gameScene && (gameScene as any).widgetManager) {
+      (gameScene as any).widgetManager.startClock();
+    }
+    
     this.scene.stop();
   }
 
