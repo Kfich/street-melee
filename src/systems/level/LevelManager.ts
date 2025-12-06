@@ -80,17 +80,24 @@ export class LevelManager {
   }
 
   /**
-   * Create scrolling background layers
+   * Create scrolling background layers with enhanced parallax
    */
   private createBackground() {
     const { height } = this.scene.cameras.main;
     
-    // Create multiple parallax layers
+    // Create multiple parallax layers with improved depth perception
     for (let i = 0; i < this.levelData.backgroundLayers; i++) {
+      // Determine parallax speed for each layer (further = slower)
+      // Layer 0 (furthest): 0.2x speed
+      // Layer 1 (middle): 0.5x speed
+      // Layer 2 (closest): 0.8x speed
+      const parallaxSpeed = 0.2 + (i * 0.3);
+      const depth = -100 - (i * 10); // Deeper layers have more negative depth
+      
       const layer = this.scene.add.tileSprite(
         0,
         0,
-        this.levelData.width,
+        this.levelData.width * 2, // Make wider for seamless tiling
         height,
         'background'
       );
@@ -106,8 +113,9 @@ export class LevelManager {
       }
       
       layer.setOrigin(0, 0);
-      layer.setDepth(-10 + i); // Different depths for parallax
-      layer.setScrollFactor(1 - (i * 0.1), 1); // Parallax effect
+      layer.setDepth(depth);
+      layer.setScrollFactor(parallaxSpeed, 1); // Enhanced parallax effect
+      layer.setTint(0xffffff - (i * 0x111111)); // Slightly darker for depth
       
       this.backgroundLayers.push(layer);
     }
@@ -245,13 +253,19 @@ export class LevelManager {
   /**
    * Update level (scrolling, spawns, waves, etc.)
    */
-  update(_cameraX: number, playerX?: number) {
-    // Update background scrolling
+  update(cameraX: number, playerX?: number) {
+    // Update background scrolling with improved parallax
     this.scrollOffset += this.levelData.scrollSpeed;
     
+    // Enhanced parallax scrolling with different speeds per layer
     this.backgroundLayers.forEach((layer, index) => {
-      const scrollFactor = 1 - (index * 0.1);
-      layer.tilePositionX = this.scrollOffset * scrollFactor;
+      // Parallax effect: closer layers scroll faster
+      // Layer 0 (furthest): 0.3x speed
+      // Layer 1 (middle): 0.6x speed  
+      // Layer 2 (closest): 1.0x speed
+      const parallaxSpeed = 0.3 + (index * 0.35);
+      const scrollAmount = cameraX * parallaxSpeed;
+      layer.tilePositionX = scrollAmount;
     });
 
     // Check for wave triggers

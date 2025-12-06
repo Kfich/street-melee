@@ -825,6 +825,34 @@ export class GameScene extends Phaser.Scene {
       this.visualEffects.createLandingEffect(data.x, data.y, 'medium');
     });
 
+    // Listen for hit reaction events
+    this.events.on('entityHitReaction', (data: { entity: any; damage: number; x: number; y: number }) => {
+      // Additional visual effects for hit reactions
+      if (data.damage >= 20) {
+        // Heavy hit - more dramatic effect
+        this.visualEffects.screenShakeLight(100);
+      }
+    });
+
+    // Listen for knockdown events
+    this.events.on('entityKnockedDown', (data: { entity: any; x: number; y: number }) => {
+      // Impact effect for knockdown
+      this.visualEffects.createLandingEffect(data.x, data.y, 'heavy');
+      this.visualEffects.screenShakeMedium(200);
+    });
+
+    // Listen for get-up events
+    this.events.on('entityGotUp', (data: { entity: any; x: number; y: number }) => {
+      // Subtle effect when getting up
+      this.visualEffects.createSmoke(data.x, data.y);
+    });
+
+    // Listen for weapon swing events
+    this.events.on('weaponSwing', (data: { weapon: any; character: any; x: number; y: number; facingRight: boolean; weaponType: string }) => {
+      // Create weapon swing visual effects
+      this.visualEffects.createWeaponSwingEffect(data.x, data.y, data.facingRight, data.weaponType);
+    });
+
     // Listen for hit stop events
     this.events.on('hitStop', (type: 'light' | 'medium' | 'heavy' | 'knockdown') => {
       switch (type) {
@@ -1017,11 +1045,35 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.events.on('weaponHit', () => {
-      this.audioManager.playSound('weaponHit');
+      this.audioManager.playSound('weaponHit', 0.8);
+    });
+
+    this.events.on('weaponSwing', () => {
+      // Play weapon swing sound (whoosh)
+      this.audioManager.playSound('weaponHit', 0.5); // Reuse weaponHit for now
+    });
+
+    this.events.on('entityDamaged', (data: { damage: number; isHeavy?: boolean }) => {
+      // Play impact sound based on damage
+      if (data.isHeavy || data.damage >= 25) {
+        this.audioManager.playSound('punch', 1.0); // Heavy hit
+      } else {
+        this.audioManager.playSound('punch', 0.6); // Light hit
+      }
+    });
+
+    this.events.on('entityHitReaction', () => {
+      // Subtle hit reaction sound
+      this.audioManager.playSound('punch', 0.4);
+    });
+
+    this.events.on('entityKnockedDown', () => {
+      // Heavy impact sound for knockdown
+      this.audioManager.playSound('throw', 1.0);
     });
 
     this.events.on('itemCollected', () => {
-      this.audioManager.playSound('itemPickup');
+      this.audioManager.playSound('itemPickup', 0.7);
     });
 
     this.events.on('knockdown', () => {

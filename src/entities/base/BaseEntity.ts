@@ -67,12 +67,64 @@ export abstract class BaseEntity {
    */
   takeDamage(amount: number): void {
     const wasAlive = this.health > 0;
+    const previousHealth = this.health;
     this.health = Math.max(0, Math.min(this.maxHealth, this.health - amount));
+    
+    // Emit hit reaction event if taking damage (not healing)
+    if (amount > 0 && this.health < previousHealth) {
+      this.onHitReaction(amount);
+    }
     
     // Emit defeat event if entity just died
     if (wasAlive && this.health <= 0) {
       this.scene.events.emit('entityDefeated', this);
     }
+  }
+
+  /**
+   * Handle hit reaction (visual feedback when taking damage)
+   * Override in subclasses for character-specific reactions
+   */
+  protected onHitReaction(damage: number): void {
+    if (!this.sprite || !this.sprite.active) return;
+    
+    // Brief flash effect
+    this.sprite.setTint(0xff0000); // Red tint
+    this.scene.tweens.add({
+      targets: this.sprite,
+      clearTint: true,
+      duration: 100,
+      onComplete: () => {
+        if (this.sprite) {
+          this.sprite.clearTint();
+        }
+      }
+    });
+    
+    // Brief scale animation (flinch)
+    const originalScaleX = this.sprite.scaleX;
+    const originalScaleY = this.sprite.scaleY;
+    this.scene.tweens.add({
+      targets: this.sprite,
+      scaleX: originalScaleX * 0.9,
+      scaleY: originalScaleY * 0.9,
+      duration: 50,
+      yoyo: true,
+      ease: 'Power2',
+      onComplete: () => {
+        if (this.sprite) {
+          this.sprite.setScale(originalScaleX, originalScaleY);
+        }
+      }
+    });
+    
+    // Emit hit reaction event for additional effects
+    this.scene.events.emit('entityHitReaction', {
+      entity: this,
+      damage: damage,
+      x: this.sprite.x,
+      y: this.sprite.y
+    });
   }
 
   /**

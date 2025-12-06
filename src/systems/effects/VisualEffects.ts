@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { GameConfig } from '../../config/GameConfig';
 
 /**
  * Visual effects system for hit marks, particles, etc.
@@ -696,28 +697,28 @@ export class VisualEffects {
    * Hit stop for light hits
    */
   hitStopLight() {
-    this.hitStop(30, 0.1);
+    this.hitStop(GameConfig.HIT_STOP_LIGHT, GameConfig.HIT_STOP_TIME_SCALE);
   }
 
   /**
    * Hit stop for medium hits
    */
   hitStopMedium() {
-    this.hitStop(50, 0.05);
+    this.hitStop(GameConfig.HIT_STOP_MEDIUM, GameConfig.HIT_STOP_TIME_SCALE);
   }
 
   /**
    * Hit stop for heavy hits
    */
   hitStopHeavy() {
-    this.hitStop(80, 0.03);
+    this.hitStop(GameConfig.HIT_STOP_HEAVY, GameConfig.HIT_STOP_TIME_SCALE);
   }
 
   /**
    * Hit stop for knockdown hits
    */
   hitStopKnockdown() {
-    this.hitStop(120, 0.02);
+    this.hitStop(GameConfig.HIT_STOP_KNOCKDOWN, GameConfig.HIT_STOP_TIME_SCALE * 0.5); // Even slower for knockdown
   }
 
   /**
@@ -860,6 +861,70 @@ export class VisualEffects {
         }
       });
     }
+  }
+
+  /**
+   * Create weapon swing visual effects
+   * @param x - X position
+   * @param y - Y position
+   * @param facingRight - Direction character is facing
+   * @param weaponType - Type of weapon
+   */
+  createWeaponSwingEffect(x: number, y: number, facingRight: boolean, weaponType: string): void {
+    // Weapon-specific colors for swing trail
+    const weaponColors: Record<string, number> = {
+      pipe: 0x888888,    // Gray
+      knife: 0xcccccc,   // Light gray
+      bottle: 0x00ff00,   // Green
+      bat: 0x8b4513      // Brown
+    };
+
+    const color = weaponColors[weaponType.toLowerCase()] || 0xffffff;
+    const direction = facingRight ? 1 : -1;
+    
+    // Create swing trail particles
+    for (let i = 0; i < 6; i++) {
+      const particle = this.scene.add.circle(
+        x + (direction * (i * 5)),
+        y - 10 + (Math.random() - 0.5) * 20,
+        2 + Math.random() * 2,
+        color,
+        0.7
+      );
+      
+      const angle = (facingRight ? 0 : Math.PI) + (Math.random() - 0.5) * 0.5;
+      const speed = 30 + Math.random() * 40;
+      
+      this.scene.tweens.add({
+        targets: particle,
+        x: particle.x + Math.cos(angle) * speed,
+        y: particle.y + Math.sin(angle) * speed,
+        alpha: 0,
+        scale: 0,
+        duration: 200 + Math.random() * 100,
+        ease: 'Power2',
+        onComplete: () => {
+          particle.destroy();
+        }
+      });
+    }
+    
+    // Create swing arc (semi-circle)
+    const arcGraphics = this.scene.add.graphics();
+    arcGraphics.lineStyle(2, color, 0.6);
+    const startAngle = facingRight ? -Math.PI / 2 : Math.PI / 2;
+    const endAngle = facingRight ? Math.PI / 2 : -Math.PI / 2;
+    arcGraphics.arc(x, y - 10, 25, startAngle, endAngle, false);
+    arcGraphics.setDepth(999);
+    
+    this.scene.tweens.add({
+      targets: arcGraphics,
+      alpha: 0,
+      duration: 150,
+      onComplete: () => {
+        arcGraphics.destroy();
+      }
+    });
   }
 }
 

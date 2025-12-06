@@ -52,12 +52,13 @@ export class HealthBar {
     // Smoothly animate health decrease
     const healthDiff = health - this.currentDisplayHealth;
     if (Math.abs(healthDiff) > 0.1) {
-      // Animate to new health value
+      // Animate to new health value with smoother easing
+      const animationDuration = healthDiff < 0 ? 400 : 200; // Slower decrease, faster increase
       this.scene.tweens.add({
         targets: this,
         currentDisplayHealth: health,
-        duration: 300,
-        ease: 'Power2'
+        duration: animationDuration,
+        ease: healthDiff < 0 ? 'Power2.easeOut' : 'Power2.easeIn'
       });
       
       // Flash effect when taking damage

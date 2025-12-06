@@ -564,6 +564,11 @@ export abstract class BaseCharacter extends BaseEntity {
       this.blockCooldown -= 16; // ~60fps
     }
     
+    // Update knockdown cooldown
+    if (this.knockdownCooldown > 0) {
+      this.knockdownCooldown -= 16; // ~60fps
+    }
+    
     this.updateState();
     this.updateAnimations();
     
@@ -980,6 +985,16 @@ export abstract class BaseCharacter extends BaseEntity {
     this.attackCooldown = GameConfig.ATTACK_DURATION;
     this.scene.events.emit('weaponHit');
     
+    // Emit weapon swing event for visual effects
+    this.scene.events.emit('weaponSwing', {
+      weapon: this.currentWeapon,
+      character: this,
+      x: this.sprite.x,
+      y: this.sprite.y,
+      facingRight: this.facingRight,
+      weaponType: this.currentWeapon.getWeaponType()
+    });
+    
     // Create weapon attack hitbox
     this.currentHitbox = this.currentWeapon.createAttackHitbox(
       this.sprite,
@@ -987,6 +1002,9 @@ export abstract class BaseCharacter extends BaseEntity {
     );
     
     this.scene.events.emit('hitboxCreated', this.currentHitbox);
+    
+    // Animate weapon swing
+    this.animateWeaponSwing();
     
     // End attack after duration
     this.scene.time.delayedCall(GameConfig.ATTACK_DURATION, () => {
@@ -996,6 +1014,51 @@ export abstract class BaseCharacter extends BaseEntity {
       if (this.currentHitbox) {
         this.currentHitbox.deactivate();
         this.currentHitbox = undefined;
+      }
+    });
+  }
+
+  /**
+   * Animate weapon swing
+   */
+  private animateWeaponSwing(): void {
+    if (!this.currentWeapon || !this.currentWeapon.sprite) return;
+    
+    const weaponSprite = this.currentWeapon.sprite;
+    const swingAngle = this.facingRight ? -45 : 45; // Swing angle based on direction
+    const swingDuration = GameConfig.ATTACK_DURATION * 0.6; // 60% of attack duration
+    
+    // Reset rotation first
+    weaponSprite.setRotation(0);
+    
+    // Swing animation - rotate weapon during attack
+    this.scene.tweens.add({
+      targets: weaponSprite,
+      angle: swingAngle,
+      duration: swingDuration * 0.5,
+      ease: 'Power2.easeOut',
+      yoyo: true,
+      onComplete: () => {
+        if (weaponSprite && weaponSprite.active) {
+          weaponSprite.setRotation(0);
+        }
+      }
+    });
+    
+    // Scale animation for impact feel
+    const originalScaleX = weaponSprite.scaleX;
+    const originalScaleY = weaponSprite.scaleY;
+    this.scene.tweens.add({
+      targets: weaponSprite,
+      scaleX: originalScaleX * 1.2,
+      scaleY: originalScaleY * 1.2,
+      duration: swingDuration * 0.3,
+      yoyo: true,
+      ease: 'Power2',
+      onComplete: () => {
+        if (weaponSprite && weaponSprite.active) {
+          weaponSprite.setScale(originalScaleX, originalScaleY);
+        }
       }
     });
   }
@@ -1109,7 +1172,7 @@ export abstract class BaseCharacter extends BaseEntity {
   }
 
   /**
-   * Override takeDamage to handle blocking and drop weapon
+   * Override takeDamage to handle blocking, hit reactions, and drop weapon
    */
   takeDamage(amount: number): void {
     // Check invincibility frames first
@@ -1136,12 +1199,99 @@ export abstract class BaseCharacter extends BaseEntity {
       return;
     }
     
+    // Check for knockdown (heavy damage or health reaching 0)
+    const wasAlive = this.health > 0;
+    const willBeKnockedDown = amount >= GameConfig.KNOCKDOWN_THRESHOLD || (this.health - amount <= 0 && wasAlive);
+    
     super.takeDamage(amount);
+    
+    // Handle hit reaction state
+    if (amount > 0 && !willBeKnockedDown) {
+      this.onCharacterHitReaction(amount);
+    } else if (willBeKnockedDown) {
+      this.onKnockdown();
+    }
     
     // Drop weapon when taking damage (only if taking damage, not healing)
     if (amount > 0 && this.currentWeapon) {
       this.loseWeapon();
     }
+  }
+
+  /**
+   * Handle character-specific hit reaction
+   */
+  protected onCharacterHitReaction(damage: number): void {
+    if (!this.sprite || !this.sprite.active) return;
+    
+    // Set hit reaction state briefly
+    const previousState = this.state;
+    this.setState('hitReaction');
+    
+    // Brief stun duration based on damage
+    const stunDuration = Math.min(200, damage * 8); // Max 200ms stun
+    
+    // Stop movement during hit reaction
+    const body = this.sprite.body as Phaser.Physics.Arcade.Body;
+    if (body) {
+      const originalVelocityX = body.velocity.x;
+      body.setVelocityX(originalVelocityX * 0.3); // Reduce horizontal velocity
+    }
+    
+    // Return to previous state after stun
+    this.scene.time.delayedCall(stunDuration, () => {
+      if (this.sprite && this.sprite.active && this.state === 'hitReaction') {
+        this.setState(previousState === 'attacking' ? 'idle' : previousState);
+      }
+    });
+  }
+
+  /**
+   * Handle knockdown
+   */
+  protected onKnockdown(): void {
+    if (!this.sprite || !this.sprite.active) return;
+    
+    this.setState('knockedDown');
+    this.knockdownCooldown = 2000; // 2 seconds knockdown
+    
+    // Stop all movement
+    const body = this.sprite.body as Phaser.Physics.Arcade.Body;
+    if (body) {
+      body.setVelocity(0, 0);
+    }
+    
+    // Emit knockdown event
+    this.scene.events.emit('entityKnockedDown', {
+      entity: this,
+      x: this.sprite.x,
+      y: this.sprite.y
+    });
+    
+    // Auto get-up after cooldown
+    this.scene.time.delayedCall(this.knockdownCooldown, () => {
+      if (this.health > 0 && this.sprite && this.sprite.active) {
+        this.onGetUp();
+      }
+    });
+  }
+
+  /**
+   * Handle get-up from knockdown
+   */
+  protected onGetUp(): void {
+    if (!this.sprite || !this.sprite.active) return;
+    
+    this.setState('idle');
+    this.knockdownCooldown = 0;
+    this.invincibilityFrames = 60; // ~1 second invincibility after get-up
+    
+    // Emit get-up event
+    this.scene.events.emit('entityGotUp', {
+      entity: this,
+      x: this.sprite.x,
+      y: this.sprite.y
+    });
   }
 
   /**
