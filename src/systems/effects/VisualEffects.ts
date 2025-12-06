@@ -296,7 +296,7 @@ export class VisualEffects {
    * @param intensity - Flash intensity (0-1)
    * @param duration - Flash duration in ms
    */
-  createFlashEffect(x: number, y: number, color: number = 0xffffff, intensity: number = 0.6, duration: number = 150): void {
+  createFlashEffect(_x: number, _y: number, color: number = 0xffffff, intensity: number = 0.6, duration: number = 150): void {
     // Create full-screen flash overlay
     const flash = this.scene.add.rectangle(
       this.scene.cameras.main.centerX,
@@ -390,7 +390,6 @@ export class VisualEffects {
       );
       
       const angle = (Math.PI * 2 * i) / 12 + (Math.random() - 0.5) * 0.3;
-      const speed = 40 + Math.random() * 60;
       const distance = 30 + Math.random() * 40;
       
       this.scene.tweens.add({
@@ -925,6 +924,506 @@ export class VisualEffects {
         arcGraphics.destroy();
       }
     });
+  }
+
+  /**
+   * Create score popup when defeating enemies
+   * @param x - X position
+   * @param y - Y position
+   * @param score - Score value to display
+   * @param isCombo - Whether this is a combo bonus
+   */
+  createScorePopup(x: number, y: number, score: number, isCombo: boolean = false): void {
+    const text = this.scene.add.text(x, y, `+${score}`, {
+      fontSize: isCombo ? '20px' : '16px',
+      fontFamily: 'Arial',
+      color: isCombo ? '#ffff00' : '#ffffff',
+      stroke: '#000000',
+      strokeThickness: 3,
+      fontStyle: 'bold'
+    });
+    
+    text.setOrigin(0.5, 0.5);
+    text.setDepth(1000);
+    
+    // Animate score popup
+    this.scene.tweens.add({
+      targets: text,
+      y: y - 40,
+      alpha: 0,
+      scale: isCombo ? 1.5 : 1.2,
+      duration: 1000,
+      ease: 'Power2',
+      onComplete: () => {
+        text.destroy();
+      }
+    });
+  }
+
+  /**
+   * Create vault visual effect
+   * @param x - X position
+   * @param y - Y position
+   */
+  createVaultEffect(x: number, y: number): void {
+    // Create upward motion trail
+    for (let i = 0; i < 4; i++) {
+      const particle = this.scene.add.circle(
+        x + (Math.random() - 0.5) * 20,
+        y - (i * 10),
+        3 + Math.random() * 2,
+        0x00ffff, // Cyan for vault
+        0.8
+      );
+      
+      this.scene.tweens.add({
+        targets: particle,
+        y: particle.y - 30,
+        alpha: 0,
+        scale: 0,
+        duration: 300,
+        ease: 'Power2',
+        onComplete: () => {
+          particle.destroy();
+        }
+      });
+    }
+  }
+
+  /**
+   * Create vault attack visual effect
+   * @param x - X position
+   * @param y - Y position
+   */
+  createVaultAttackEffect(x: number, y: number): void {
+    // Create impact effect for vault attack
+    const impact = this.scene.add.circle(x, y, 0, 0xffff00, 0.6);
+    impact.setDepth(1000);
+    
+    this.scene.tweens.add({
+      targets: impact,
+      radius: 25,
+      alpha: 0,
+      duration: 200,
+      ease: 'Power2',
+      onComplete: () => {
+        impact.destroy();
+      }
+    });
+    
+    // Create spark particles
+    for (let i = 0; i < 6; i++) {
+      const spark = this.scene.add.circle(
+        x,
+        y,
+        2,
+        0xffff00,
+        0.9
+      );
+      
+      const angle = (Math.PI * 2 * i) / 6;
+      const speed = 40 + Math.random() * 30;
+      
+      this.scene.tweens.add({
+        targets: spark,
+        x: spark.x + Math.cos(angle) * speed,
+        y: spark.y + Math.sin(angle) * speed,
+        alpha: 0,
+        scale: 0,
+        duration: 250,
+        ease: 'Power2',
+        onComplete: () => {
+          spark.destroy();
+        }
+      });
+    }
+  }
+
+  /**
+   * Create parry visual effect
+   * @param x - X position
+   * @param y - Y position
+   */
+  createParryEffect(x: number, y: number): void {
+    // Create parry flash (golden/white flash)
+    const flash = this.scene.add.circle(x, y, 0, 0xffff00, 0.9);
+    flash.setDepth(1000);
+    
+    this.scene.tweens.add({
+      targets: flash,
+      radius: 50,
+      alpha: 0,
+      duration: 150,
+      ease: 'Power2',
+      onComplete: () => {
+        flash.destroy();
+      }
+    });
+    
+    // Create parry particles (golden sparks)
+    for (let i = 0; i < 8; i++) {
+      const particle = this.scene.add.circle(
+        x,
+        y,
+        2 + Math.random() * 2,
+        0xffff00, // Gold
+        0.9
+      );
+      
+      const angle = (Math.PI * 2 * i) / 8;
+      const speed = 50 + Math.random() * 40;
+      
+      this.scene.tweens.add({
+        targets: particle,
+        x: particle.x + Math.cos(angle) * speed,
+        y: particle.y + Math.sin(angle) * speed,
+        alpha: 0,
+        scale: 0,
+        duration: 300,
+        ease: 'Power2',
+        onComplete: () => {
+          particle.destroy();
+        }
+      });
+    }
+  }
+
+  /**
+   * Create counter attack visual effect
+   * @param x - X position
+   * @param y - Y position
+   */
+  createCounterAttackEffect(x: number, y: number): void {
+    // Create powerful counter flash
+    const flash = this.scene.add.circle(x, y, 0, 0xff0000, 0.8);
+    flash.setDepth(1000);
+    
+    this.scene.tweens.add({
+      targets: flash,
+      radius: 80,
+      alpha: 0,
+      duration: 200,
+      ease: 'Power2',
+      onComplete: () => {
+        flash.destroy();
+      }
+    });
+    
+    // Create counter shockwave
+    const shockwave = this.scene.add.circle(x, y, 0, 0xffffff, 0.6);
+    shockwave.setDepth(999);
+    
+    this.scene.tweens.add({
+      targets: shockwave,
+      radius: 100,
+      alpha: 0,
+      duration: 250,
+      ease: 'Power2',
+      onComplete: () => {
+        shockwave.destroy();
+      }
+    });
+    
+    // Screen shake for counter
+    this.screenShakeMedium(150);
+  }
+
+  /**
+   * Create air combo visual effect
+   * @param x - X position
+   * @param y - Y position
+   * @param comboCount - Number of hits in combo
+   */
+  createAirComboEffect(x: number, y: number, comboCount: number): void {
+    // Create upward motion particles for air combos
+    const color = comboCount >= 3 ? 0xff00ff : 0x00ffff; // Purple for 3+, cyan for 2
+    
+    for (let i = 0; i < comboCount * 2; i++) {
+      const particle = this.scene.add.circle(
+        x + (Math.random() - 0.5) * 30,
+        y - 20,
+        2 + Math.random() * 2,
+        color,
+        0.8
+      );
+      
+      const angle = Math.PI / 2 + (Math.random() - 0.5) * 0.5; // Upward
+      const speed = 40 + Math.random() * 40;
+      
+      this.scene.tweens.add({
+        targets: particle,
+        x: particle.x + Math.cos(angle) * speed,
+        y: particle.y + Math.sin(angle) * speed,
+        alpha: 0,
+        scale: 0,
+        duration: 400,
+        ease: 'Power2',
+        onComplete: () => {
+          particle.destroy();
+        }
+      });
+    }
+  }
+
+  /**
+   * Create air throw visual effect
+   * @param x - X position
+   * @param y - Y position
+   * @param direction - Throw direction
+   */
+  createAirThrowEffect(x: number, y: number): void {
+    // Create spiral effect for air throws
+    for (let i = 0; i < 12; i++) {
+      const particle = this.scene.add.circle(
+        x,
+        y,
+        3,
+        0xff8800, // Orange
+        0.9
+      );
+      
+      const angle = (Math.PI * 2 * i) / 12;
+      const speed = 50 + Math.random() * 50;
+      
+      this.scene.tweens.add({
+        targets: particle,
+        x: particle.x + Math.cos(angle) * speed,
+        y: particle.y + Math.sin(angle) * speed,
+        alpha: 0,
+        scale: 0,
+        duration: 500,
+        ease: 'Power2',
+        onComplete: () => {
+          particle.destroy();
+        }
+      });
+    }
+  }
+
+  /**
+   * Create weapon combo visual effect
+   * @param x - X position
+   * @param y - Y position
+   * @param comboCount - Number of hits in combo
+   * @param weaponType - Type of weapon
+   */
+  createWeaponComboEffect(x: number, y: number, comboCount: number, weaponType: string): void {
+    // Weapon-specific combo colors
+    const weaponColors: Record<string, number> = {
+      pipe: 0x888888,
+      knife: 0xcccccc,
+      bottle: 0x00ff00,
+      bat: 0x8b4513
+    };
+    
+    const color = weaponColors[weaponType.toLowerCase()] || 0xffffff;
+    const intensity = comboCount >= 4 ? 1.0 : comboCount >= 3 ? 0.8 : 0.6;
+    
+    // Create combo flash
+    const flash = this.scene.add.circle(x, y, 0, color, intensity);
+    flash.setDepth(1000);
+    
+    this.scene.tweens.add({
+      targets: flash,
+      radius: 30 + (comboCount * 5),
+      alpha: 0,
+      duration: 200,
+      ease: 'Power2',
+      onComplete: () => {
+        flash.destroy();
+      }
+    });
+  }
+
+  /**
+   * Create wall bounce visual effect
+   * @param x - X position
+   * @param y - Y position
+   */
+  createWallBounceEffect(x: number, y: number): void {
+    // Create impact effect for wall bounce
+    const impact = this.scene.add.circle(x, y, 0, 0xffffff, 0.8);
+    impact.setDepth(1000);
+    
+    this.scene.tweens.add({
+      targets: impact,
+      radius: 40,
+      alpha: 0,
+      duration: 200,
+      ease: 'Power2',
+      onComplete: () => {
+        impact.destroy();
+      }
+    });
+    
+    // Create bounce particles
+    for (let i = 0; i < 8; i++) {
+      const particle = this.scene.add.circle(
+        x,
+        y,
+        2 + Math.random() * 2,
+        0xffffff,
+        0.9
+      );
+      
+      const angle = (Math.PI * 2 * i) / 8;
+      const speed = 60 + Math.random() * 40;
+      
+      this.scene.tweens.add({
+        targets: particle,
+        x: particle.x + Math.cos(angle) * speed,
+        y: particle.y + Math.sin(angle) * speed,
+        alpha: 0,
+        scale: 0,
+        duration: 300,
+        ease: 'Power2',
+        onComplete: () => {
+          particle.destroy();
+        }
+      });
+    }
+    
+    // Screen shake for wall bounce
+    this.screenShakeMedium(100);
+  }
+
+  /**
+   * Create multi-enemy throw visual effect
+   * @param x - X position
+   * @param y - Y position
+   */
+  createMultiEnemyThrowEffect(x: number, y: number): void {
+    // Create explosion-like effect for multi-enemy throws
+    const explosion = this.scene.add.circle(x, y, 0, 0xff0000, 0.7);
+    explosion.setDepth(1000);
+    
+    this.scene.tweens.add({
+      targets: explosion,
+      radius: 60,
+      alpha: 0,
+      duration: 300,
+      ease: 'Power2',
+      onComplete: () => {
+        explosion.destroy();
+      }
+    });
+    
+    // Create multiple impact particles
+    for (let i = 0; i < 16; i++) {
+      const particle = this.scene.add.circle(
+        x,
+        y,
+        3 + Math.random() * 2,
+        0xff6600, // Orange-red
+        0.9
+      );
+      
+      const angle = (Math.PI * 2 * i) / 16;
+      const speed = 80 + Math.random() * 60;
+      
+      this.scene.tweens.add({
+        targets: particle,
+        x: particle.x + Math.cos(angle) * speed,
+        y: particle.y + Math.sin(angle) * speed,
+        alpha: 0,
+        scale: 0,
+        duration: 400,
+        ease: 'Power2',
+        onComplete: () => {
+          particle.destroy();
+        }
+      });
+    }
+    
+    // Strong screen shake for multi-enemy throw
+    this.screenShakeHeavy(200);
+  }
+
+  /**
+   * Create item reward popup when item is collected
+   * @param x - X position
+   * @param y - Y position
+   * @param rewardDisplay - Reward display data
+   */
+  createItemRewardPopup(x: number, y: number, rewardDisplay: { text: string; color: number; type: string; value: number }): void {
+    // Create main reward text
+    const rewardText = this.scene.add.text(x, y - 30, rewardDisplay.text, {
+      fontFamily: 'Press Start 2P',
+      fontSize: '14px',
+      color: `#${rewardDisplay.color.toString(16).padStart(6, '0')}`,
+      stroke: '#000000',
+      strokeThickness: 4,
+      align: 'center'
+    });
+    rewardText.setOrigin(0.5, 0.5);
+    rewardText.setDepth(1001);
+
+    // Create background glow for rare items
+    if (rewardDisplay.type === 'lives' || rewardDisplay.type === 'power' || rewardDisplay.value >= 500) {
+      const glow = this.scene.add.circle(x, y - 30, 0, rewardDisplay.color, 0.3);
+      glow.setDepth(1000);
+      
+      this.scene.tweens.add({
+        targets: glow,
+        radius: 40,
+        alpha: 0,
+        duration: 800,
+        ease: 'Power2',
+        onComplete: () => {
+          glow.destroy();
+        }
+      });
+    }
+
+    // Animate reward text
+    this.scene.tweens.add({
+      targets: rewardText,
+      y: y - 80,
+      alpha: 0,
+      scale: 1.5,
+      duration: 1000,
+      ease: 'Power2',
+      onComplete: () => {
+        rewardText.destroy();
+      }
+    });
+
+    // Scale pulse effect
+    this.scene.tweens.add({
+      targets: rewardText,
+      scale: 1.3,
+      duration: 200,
+      yoyo: true,
+      ease: 'Power2'
+    });
+
+    // Create particles based on reward type
+    const particleCount = rewardDisplay.value >= 500 ? 12 : 6;
+    for (let i = 0; i < particleCount; i++) {
+      const particle = this.scene.add.circle(
+        x,
+        y - 30,
+        2 + Math.random() * 2,
+        rewardDisplay.color,
+        0.9
+      );
+      
+      const angle = (Math.PI * 2 * i) / particleCount;
+      const speed = 30 + Math.random() * 30;
+      
+      this.scene.tweens.add({
+        targets: particle,
+        x: particle.x + Math.cos(angle) * speed,
+        y: particle.y + Math.sin(angle) * speed,
+        alpha: 0,
+        scale: 0,
+        duration: 600,
+        ease: 'Power2',
+        onComplete: () => {
+          particle.destroy();
+        }
+      });
+    }
   }
 }
 

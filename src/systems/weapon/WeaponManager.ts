@@ -35,6 +35,10 @@ export class WeaponManager {
       : new Weapon(this.scene, x, y, weaponType);
     this.weapons.push(weapon);
     this.markDirty();
+    
+    // Emit spawn event for tracking
+    this.scene.events.emit('weaponSpawned', weapon);
+    
     return weapon;
   }
 
@@ -55,6 +59,12 @@ export class WeaponManager {
       );
       
       if (distance < pickupRange) {
+        // Emit pickup event for tracking
+        this.scene.events.emit('weaponPickedUp', {
+          weapon: weapon,
+          weaponType: weapon.getWeaponType(),
+          character: character
+        });
         return weapon;
       }
     }
@@ -100,10 +110,40 @@ export class WeaponManager {
    */
   getAll(): Weapon[] {
     if (this.isDirty || this.cachedAll === null) {
-      this.cachedAll = this.weapons.filter(weapon => !weapon.shouldDestroy());
+      this.cachedAll = this.weapons.filter(weapon => !weapon.shouldDestroy() && !weapon.isHeld());
       this.isDirty = false;
     }
     return this.cachedAll;
+  }
+
+  /**
+   * Get count of active weapons
+   */
+  getActiveCount(): number {
+    return this.getAll().length;
+  }
+
+  /**
+   * Get count of weapons by type
+   */
+  getCountByType(): Map<WeaponType, number> {
+    const counts = new Map<WeaponType, number>();
+    const allWeapons = this.getAll();
+    
+    allWeapons.forEach(weapon => {
+      const type = weapon.getWeaponType();
+      const count = counts.get(type) || 0;
+      counts.set(type, count + 1);
+    });
+    
+    return counts;
+  }
+
+  /**
+   * Get total weapons spawned (including held/destroyed)
+   */
+  getTotalSpawned(): number {
+    return this.weapons.length;
   }
 
   /**

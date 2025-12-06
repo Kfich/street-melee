@@ -164,18 +164,51 @@ export class CombatSystem {
       const facingRight = !hitbox.owner.flipX;
       const knockbackX = facingRight ? damageInfo.knockback.x : -damageInfo.knockback.x;
       
-      // Apply knockback with easing (smooth acceleration/deceleration)
-      // Start with full velocity, then apply drag
-      body.setVelocityX(knockbackX);
-      if (damageInfo.knockback.y !== 0) {
-        body.setVelocityY(damageInfo.knockback.y);
-      }
-      
-      // Apply knockback drag for smoother deceleration
-      // Use tween to gradually reduce knockback velocity
-      const knockbackDuration = damageInfo.isKnockdown ? 400 : 200;
+      // Enhanced knockback with better curves using easing functions
+      // Start with full velocity, then apply smooth deceleration
+      const knockbackDuration = damageInfo.isKnockdown ? 500 : 250;
       const startVelX = knockbackX;
       const startVelY = damageInfo.knockback.y || 0;
+      
+      // Apply initial velocity
+      body.setVelocityX(startVelX);
+      if (startVelY !== 0) {
+        body.setVelocityY(startVelY);
+      }
+      
+      // Create smooth knockback curve using tween with easing
+      const knockbackData = { velocityX: startVelX, velocityY: startVelY };
+      const scene = (target.sprite.scene as Phaser.Scene);
+      
+      // Use Power2 easing for smooth deceleration (ease-out)
+      scene.tweens.add({
+        targets: knockbackData,
+        velocityX: 0,
+        velocityY: 0,
+        duration: knockbackDuration,
+        ease: 'Power2.easeOut', // Smooth deceleration curve
+        onUpdate: () => {
+          if (target.sprite && target.sprite.active && target.sprite.body && damageInfo.knockback) {
+            const body = target.sprite.body as Phaser.Physics.Arcade.Body;
+            body.setVelocityX(knockbackData.velocityX);
+            if (damageInfo.knockback.y !== 0) {
+              body.setVelocityY(knockbackData.velocityY);
+            }
+          }
+        },
+        onComplete: () => {
+          // Ensure velocity is zero at end
+          if (target.sprite && target.sprite.active && target.sprite.body && damageInfo.knockback) {
+            const body = target.sprite.body as Phaser.Physics.Arcade.Body;
+            body.setVelocityX(0);
+            if (damageInfo.knockback.y !== 0) {
+              body.setVelocityY(0);
+            }
+          }
+        }
+      });
+      
+      // Old tween-based approach removed - using new easing approach above
       
       this.scene.tweens.add({
         targets: { value: 1 },

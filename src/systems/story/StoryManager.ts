@@ -200,8 +200,8 @@ export class StoryManager {
     if (entry.scene_dialogue_key) {
       // Load character-specific dialogue
       text = this.getSceneDialogue(entry.scene_dialogue_key);
+      console.log('[StoryManager] Loaded scene dialogue for key:', entry.scene_dialogue_key, 'text:', text);
     }
-
 
     // Replace {CHARACTER} placeholder with actual character name
     if (text.includes('{CHARACTER}')) {
@@ -214,6 +214,8 @@ export class StoryManager {
       console.warn('[StoryManager] No text to display for dialogue entry:', entry);
       text = '[No text available]';
     }
+    
+    console.log('[StoryManager] Displaying dialogue text:', text.substring(0, 50) + (text.length > 50 ? '...' : ''));
 
     // Create dialogue box (this creates the text element)
     this.createDialogueBox(entry, text);
@@ -228,27 +230,45 @@ export class StoryManager {
       this.dialogueText.setActive(true);
     }
 
-    // Use delayedCall to set actual text (allows time for texture initialization)
-    this.scene.time.delayedCall(50, () => {
-      if (!this.dialogueText) {
-        console.error('[StoryManager] dialogueText is null when trying to set text!');
-        return;
-      }
-
+    // Set text immediately (don't wait for delay)
+    if (this.dialogueText) {
       // Ensure text element is visible and active
       this.dialogueText.setVisible(true);
       this.dialogueText.setActive(true);
-
+      
       // Handle typewriter effect
       if (entry.typewriter_speed && entry.typewriter_speed > 0) {
         const speed = entry.typewriter_speed ?? 0.015;
-        this.startTypewriter(text, speed);
+        // Start typewriter immediately
+        this.scene.time.delayedCall(50, () => {
+          if (this.dialogueText) {
+            this.startTypewriter(text, speed);
+          }
+        });
       } else {
-        // Set text directly
+        // Set text directly immediately
         this.dialogueText.setText(text);
         this.dialogueText.setVisible(true);
+        this.dialogueText.setActive(true);
       }
-    });
+    } else {
+      console.error('[StoryManager] dialogueText is null when trying to set text!');
+      // Retry after a short delay
+      this.scene.time.delayedCall(100, () => {
+        if (!this.dialogueText) {
+          console.error('[StoryManager] dialogueText is still null after retry!');
+          return;
+        }
+        this.dialogueText.setVisible(true);
+        this.dialogueText.setActive(true);
+        if (entry.typewriter_speed && entry.typewriter_speed > 0) {
+          const speed = entry.typewriter_speed ?? 0.015;
+          this.startTypewriter(text, speed);
+        } else {
+          this.dialogueText.setText(text);
+        }
+      });
+    }
 
     // Auto-advance if enabled
     if (entry.auto_advance) {
@@ -331,13 +351,15 @@ export class StoryManager {
       fontFamily: '"Press Start 2P", "Courier New", monospace',
       color: textColor,
       stroke: '#000000',
-      strokeThickness: 1,
+      strokeThickness: 2, // Increased for better visibility
       wordWrap: { width: boxWidth - 40 },
       lineSpacing: 4,
     });
     this.dialogueText.setDepth(10002);
     this.dialogueText.setVisible(true);
     this.dialogueText.setActive(true);
+    // Ensure text is on top
+    this.scene.children.bringToTop(this.dialogueText);
     this.cutsceneContainer.add(this.dialogueText);
 
     // Add prompt text for manual advance
@@ -366,10 +388,18 @@ export class StoryManager {
       return;
     }
 
-    let currentIndex = 0;
-    this.dialogueText.setText('');
-    this.dialogueText.setVisible(true);
-    this.dialogueText.setActive(true);
+    // Show first character immediately for better UX
+    if (fullText.length > 0) {
+      this.dialogueText.setText(fullText.substring(0, 1));
+      this.dialogueText.setVisible(true);
+      this.dialogueText.setActive(true);
+    }
+
+    let currentIndex = 1; // Start from second character since we showed first one
+    if (fullText.length <= 1) {
+      // If text is only one character, we're done
+      return;
+    }
 
     // Calculate delay in milliseconds
     const delayMs = speed * 1000;

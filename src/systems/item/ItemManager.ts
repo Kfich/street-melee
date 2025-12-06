@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { Item, ItemType } from '../../entities/items/Item';
 import { BaseCharacter } from '../../entities/characters/BaseCharacter';
+import { RewardSystem } from '../reward/RewardSystem';
 
 /**
  * Manages item spawning, collection, and effects
@@ -12,9 +13,14 @@ export class ItemManager {
   private isDirty: boolean = true;
   private score: number = 0;
   private lives: number = 3;
+  // rewardSystem is passed to constructor but Items access it via scene.rewardSystem
+  // Parameter kept for API consistency but not stored
+  private magneticCollectionEnabled: boolean = true;
+  private magneticRange: number = 50; // Range for magnetic collection
 
-  constructor(scene: Phaser.Scene) {
+  constructor(scene: Phaser.Scene, _rewardSystem?: RewardSystem) {
     this.scene = scene;
+    // Items access rewardSystem via scene.rewardSystem, not stored here
     this.setupEventListeners();
   }
 
@@ -53,6 +59,10 @@ export class ItemManager {
       : new Item(this.scene, x, y, itemType);
     this.items.push(item);
     this.markDirty();
+    
+    // Emit spawn event for tracking
+    this.scene.events.emit('itemSpawned', item);
+    
     return item;
   }
 
@@ -79,7 +89,7 @@ export class ItemManager {
   }
 
   /**
-   * Check for item collection
+   * Check for item collection with magnetic effect
    */
   checkCollection(character: BaseCharacter, collectionRange: number = 25): Item | null {
     const characterSprite = character.sprite;
@@ -94,6 +104,12 @@ export class ItemManager {
         item.sprite.y
       );
       
+      // Magnetic collection - pull items toward player
+      if (this.magneticCollectionEnabled && distance < this.magneticRange) {
+        (item as any).applyMagneticPull(character, 0.15);
+      }
+      
+      // Direct collection
       if (distance < collectionRange) {
         item.collect(character);
         this.markDirty(); // Item collected, cache needs update
@@ -103,11 +119,25 @@ export class ItemManager {
     
     return null;
   }
+  
+  /**
+   * Enable/disable magnetic collection
+   */
+  setMagneticCollection(enabled: boolean): void {
+    this.magneticCollectionEnabled = enabled;
+  }
+  
+  /**
+   * Set magnetic collection range
+   */
+  setMagneticRange(range: number): void {
+    this.magneticRange = range;
+  }
 
   /**
    * Update all items
    */
-  update() {
+  update(players?: BaseCharacter[]) {
     const toRemove: Item[] = [];
     
     this.items.forEach(item => {
@@ -115,6 +145,16 @@ export class ItemManager {
         toRemove.push(item);
       } else {
         item.update();
+        
+        // Check magnetic collection for all players
+        if (this.magneticCollectionEnabled && players) {
+          for (const player of players) {
+            if ((item as any).checkCollectionRange(player)) {
+              (item as any).applyMagneticPull(player, 0.1);
+              break; // Only pull toward nearest player
+            }
+          }
+        }
       }
     });
     
@@ -146,6 +186,43 @@ export class ItemManager {
       this.isDirty = false;
     }
     return this.cachedAll;
+  }
+
+  /**
+   * Get count of active items
+   */
+  getActiveCount(): number {
+    return this.getAll().length;
+  }
+
+  /**
+   * Get count of items by type
+   */
+  getCountByType(): Map<ItemType, number> {
+    const counts = new Map<ItemType, number>();
+    const allItems = this.getAll();
+    
+    allItems.forEach(item => {
+      const type = item.getItemType();
+      const count = counts.get(type) || 0;
+      counts.set(type, count + 1);
+    });
+    
+    return counts;
+  }
+
+  /**
+   * Get total items spawned (including collected)
+   */
+  getTotalSpawned(): number {
+    return this.items.length;
+  }
+
+  /**
+   * Get total items collected
+   */
+  getTotalCollected(): number {
+    return this.items.filter(item => item.isCollected()).length;
   }
 
   /**

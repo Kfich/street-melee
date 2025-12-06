@@ -44,6 +44,15 @@ export abstract class BaseCharacter extends BaseEntity {
   protected isBlocking: boolean = false; // Whether character is currently blocking
   protected blockCooldown: number = 0; // Cooldown between blocks
   protected blockDuration: number = 0; // Remaining block duration
+  protected parryWindow: number = 0; // Parry timing window (active when blocking starts)
+  protected canCounter: boolean = false; // Whether character can perform counter attack
+  protected parryCooldown: number = 0; // Cooldown after parry
+  protected airComboCount: number = 0; // Track air combo hits
+  protected lastAirAttackTime: number = 0; // Track timing for air combos
+  protected airComboWindow: number = 600; // Time window for air combos in ms
+  protected weaponComboCount: number = 0; // Track weapon combo hits
+  protected lastWeaponAttackTime: number = 0; // Track timing for weapon combos
+  protected weaponComboWindow: number = 500; // Time window for weapon combos in ms
 
   constructor(
     scene: Phaser.Scene,
@@ -224,10 +233,22 @@ export abstract class BaseCharacter extends BaseEntity {
       return;
     }
 
-    // If we can't attack right now but attack is pressed, buffer it
+    // Enhanced input buffering - buffer inputs when actions are unavailable
     if (input.attack && !this.canAttack() && this.state !== 'attacking') {
       this.inputBuffer.bufferInput(this.playerIndex, input, true);
       return;
+    }
+    
+    // Buffer special moves if unavailable
+    if (input.special && !this.canUseSpecial() && !this.isPerformingSpecial) {
+      this.inputBuffer.bufferInput(this.playerIndex, input, false);
+      return;
+    }
+    
+    // Buffer jumps if in air or during attack recovery
+    if (input.jump && !this.isGrounded && this.state !== 'jumping' && this.state !== 'attacking') {
+      this.inputBuffer.bufferInput(this.playerIndex, input, false);
+      // Don't return - allow other inputs to process
     }
 
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
@@ -414,6 +435,12 @@ export abstract class BaseCharacter extends BaseEntity {
     } else if (!input.special && this.isBlocking) {
       this.stopBlocking();
     }
+    
+    // Counter attack (attack while canCounter is true)
+    if (input.attack && this.canCounter && this.canAttack()) {
+      this.performCounterAttack();
+      return; // Don't perform regular attack
+    }
 
     // Weapon drop/throw (double-tap direction + attack)
     if (dashDetected && input.attack && this.currentWeapon) {
@@ -462,7 +489,7 @@ export abstract class BaseCharacter extends BaseEntity {
       }
     }
 
-    // Throw (when grabbing and pressing direction + attack)
+    // Throw (when grabbing and pressing direction + attack) with variations
     if (this.grabSystem && this.grabSystem.isGrabbing(this)) {
       if (input.attack) {
         let throwDirection: 'left' | 'right' | 'up' | 'down' | null = null;
@@ -472,9 +499,19 @@ export abstract class BaseCharacter extends BaseEntity {
         else if (input.down) throwDirection = 'down';
         
         if (throwDirection) {
+          // Check for multi-enemy throw opportunity
+          const nearbyEnemies = this.findNearbyEnemies(150);
+          if (nearbyEnemies.length > 0) {
+            // Multi-enemy throw (ground or air)
+            this.grabSystem.performMultiEnemyThrow(this, throwDirection, nearbyEnemies);
+            this.scene.events.emit('throwPerformed', { isSlam: throwDirection === 'down' });
+            return;
+          }
+          
+          // Regular throw with wall bounce potential
           const isSlam = throwDirection === 'down';
           this.grabSystem.performThrow(this, throwDirection, isSlam);
-          this.scene.events.emit('throwPerformed');
+          this.scene.events.emit('throwPerformed', { isSlam: isSlam });
           if (isSlam) {
             this.scene.events.emit('knockdown');
           }
@@ -488,6 +525,41 @@ export abstract class BaseCharacter extends BaseEntity {
         this.grabSystem.vault(this);
       }
     }
+  }
+
+  /**
+   * Find nearby enemies for multi-enemy throws
+   */
+  private findNearbyEnemies(range: number): BaseEntity[] {
+    const nearby: BaseEntity[] = [];
+    
+    // Get all scene children and filter for enemies
+    const sceneChildren = this.scene.children.list;
+    
+    for (const child of sceneChildren) {
+      if (!(child instanceof Phaser.GameObjects.Sprite)) continue;
+      if (child === this.sprite) continue;
+      
+      const isEnemy = child.getData('isEnemy');
+      if (!isEnemy) continue;
+      
+      const distance = Phaser.Math.Distance.Between(
+        this.sprite.x,
+        this.sprite.y,
+        child.x,
+        child.y
+      );
+      
+      if (distance <= range) {
+        // Find the entity that owns this sprite
+        const entity = child.getData('entity') as BaseEntity;
+        if (entity) {
+          nearby.push(entity);
+        }
+      }
+    }
+    
+    return nearby;
   }
 
   /**
@@ -564,6 +636,16 @@ export abstract class BaseCharacter extends BaseEntity {
       this.blockCooldown -= 16; // ~60fps
     }
     
+    // Update parry window
+    if (this.parryWindow > 0) {
+      this.parryWindow -= 16; // ~60fps
+    }
+    
+    // Update parry cooldown
+    if (this.parryCooldown > 0) {
+      this.parryCooldown -= 16; // ~60fps
+    }
+    
     // Update knockdown cooldown
     if (this.knockdownCooldown > 0) {
       this.knockdownCooldown -= 16; // ~60fps
@@ -623,13 +705,14 @@ export abstract class BaseCharacter extends BaseEntity {
   }
 
   /**
-   * Start blocking
+   * Start blocking (with parry window)
    */
   protected startBlocking(): void {
     if (this.isBlocking || this.state === 'attacking' || this.state === 'grabbing') return;
     
     this.isBlocking = true;
     this.blockDuration = GameConfig.BLOCK_DURATION;
+    this.parryWindow = GameConfig.PARRY_WINDOW; // Activate parry window
     this.setState('idle'); // Could be 'blocking' state if we add animation
     
     // Emit block event
@@ -663,6 +746,50 @@ export abstract class BaseCharacter extends BaseEntity {
    */
   isCurrentlyBlocking(): boolean {
     return this.isBlocking;
+  }
+  
+  /**
+   * Perform counter attack (after successful parry)
+   */
+  protected performCounterAttack(): void {
+    if (!this.canCounter || this.attackCooldown > 0) return;
+    
+    this.canCounter = false;
+    this.setState('attacking');
+    this.attackCooldown = GameConfig.ATTACK_DURATION;
+    
+    const facingRight = this.facingRight;
+    const offsetX = facingRight ? 30 : -30;
+    
+    // Counter attack has increased damage and knockback
+    this.currentHitbox = new Hitbox(
+      this.sprite,
+      offsetX,
+      -10,
+      40,
+      40,
+      Math.floor(this.stats.power * 15 * GameConfig.COUNTER_ATTACK_DAMAGE_MULTIPLIER), // Higher damage for counter
+      { x: facingRight ? 300 : -300, y: -100 }, // Strong knockback
+      true // Counter attacks can knockdown
+    );
+    
+    this.scene.events.emit('counterAttackPerformed', {
+      x: this.sprite.x,
+      y: this.sprite.y,
+      characterType: this.characterType
+    });
+    this.scene.events.emit('hitboxCreated', this.currentHitbox);
+    
+    // End counter attack after duration
+    this.scene.time.delayedCall(GameConfig.ATTACK_DURATION, () => {
+      if (this.state === 'attacking') {
+        this.setState('idle');
+      }
+      if (this.currentHitbox) {
+        this.currentHitbox.deactivate();
+        this.currentHitbox = undefined;
+      }
+    });
   }
 
   /**
@@ -945,6 +1072,12 @@ export abstract class BaseCharacter extends BaseEntity {
    * Pick up a weapon
    */
   pickupWeapon(weapon: Weapon) {
+    // Emit weapon pickup event for tracking
+    this.scene.events.emit('weaponPickedUp', {
+      weapon: weapon,
+      weaponType: weapon.getWeaponType(),
+      character: this
+    });
     if (this.currentWeapon) {
       // Drop current weapon if holding one
       this.currentWeapon.drop();
@@ -952,6 +1085,10 @@ export abstract class BaseCharacter extends BaseEntity {
     
     this.currentWeapon = weapon;
     weapon.pickup(this.sprite);
+    
+    // Reset weapon combo when picking up new weapon
+    this.weaponComboCount = 0;
+    this.lastWeaponAttackTime = 0;
   }
 
   /**
@@ -973,17 +1110,34 @@ export abstract class BaseCharacter extends BaseEntity {
     const direction = this.facingRight ? 'right' : 'left';
     this.currentWeapon.throw(direction);
     this.currentWeapon = null;
+    
+    // Reset weapon combo when throwing
+    this.weaponComboCount = 0;
+    this.lastWeaponAttackTime = 0;
   }
 
   /**
-   * Perform weapon attack
+   * Perform weapon attack with combo system
    */
   protected performWeaponAttack(): void {
     if (!this.currentWeapon || this.attackCooldown > 0) return;
     
+    const now = Date.now();
+    const timeSinceLastWeaponAttack = now - this.lastWeaponAttackTime;
+    
+    // Check if we can continue weapon combo
+    if (timeSinceLastWeaponAttack > this.weaponComboWindow) {
+      this.weaponComboCount = 0; // Reset combo if too much time passed
+    }
+    
+    this.weaponComboCount++;
+    this.lastWeaponAttackTime = now;
     this.setState('attacking');
     this.attackCooldown = GameConfig.ATTACK_DURATION;
     this.scene.events.emit('weaponHit');
+    
+    // Weapon combo damage increases with each hit (up to 4 hits)
+    const comboMultiplier = Math.min(1.0 + (this.weaponComboCount - 1) * 0.15, 1.45); // Max 45% bonus
     
     // Emit weapon swing event for visual effects
     this.scene.events.emit('weaponSwing', {
@@ -992,16 +1146,37 @@ export abstract class BaseCharacter extends BaseEntity {
       x: this.sprite.x,
       y: this.sprite.y,
       facingRight: this.facingRight,
-      weaponType: this.currentWeapon.getWeaponType()
+      weaponType: this.currentWeapon.getWeaponType(),
+      comboCount: this.weaponComboCount
     });
     
-    // Create weapon attack hitbox
-    this.currentHitbox = this.currentWeapon.createAttackHitbox(
+    // Create weapon attack hitbox with combo multiplier
+    const baseHitbox = this.currentWeapon.createAttackHitbox(
       this.sprite,
       this.facingRight
     );
     
+    // Apply combo damage multiplier
+    baseHitbox.damage = Math.floor(baseHitbox.damage * comboMultiplier);
+    
+    // Third and fourth hits can knockdown
+    if (this.weaponComboCount >= 3) {
+      baseHitbox.isKnockdown = true;
+    }
+    
+    this.currentHitbox = baseHitbox;
     this.scene.events.emit('hitboxCreated', this.currentHitbox);
+    
+    // Emit weapon combo event
+    if (this.weaponComboCount >= 2) {
+      this.scene.events.emit('weaponComboHit', {
+        playerIndex: this.playerIndex,
+        comboCount: this.weaponComboCount,
+        weaponType: this.currentWeapon.getWeaponType(),
+        x: this.sprite.x,
+        y: this.sprite.y
+      });
+    }
     
     // Animate weapon swing
     this.animateWeaponSwing();
@@ -1180,8 +1355,24 @@ export abstract class BaseCharacter extends BaseEntity {
       return; // Ignore damage during invincibility
     }
     
-    // Check if blocking (reduces damage by 80%)
+    // Check if blocking (reduces damage by 80% or parries if in parry window)
     if (this.isBlocking && amount > 0) {
+      // Check for parry opportunity (perfect timing)
+      // Parry window is active during the first part of blocking
+      if (this.parryWindow > 0 && this.parryWindow > GameConfig.PARRY_WINDOW * 0.5) {
+        // Parry successful - no damage taken
+        this.scene.events.emit('parrySuccessful', {
+          x: this.sprite.x,
+          y: this.sprite.y,
+          characterType: this.characterType
+        });
+        this.canCounter = true;
+        this.parryWindow = 0;
+        this.stopBlocking();
+        return; // No damage taken
+      }
+      
+      // Regular block - reduces damage by 80%
       const blockedDamage = Math.floor(amount * 0.2); // Only 20% damage gets through
       super.takeDamage(blockedDamage);
       

@@ -173,24 +173,36 @@ export class LevelManager {
         break;
       case 'weapon':
         if (spawnPoint.weaponType) {
-          const weapon = new Weapon(
-            this.scene,
-            spawnPoint.x,
-            spawnPoint.y,
-            spawnPoint.weaponType
-          );
-          this.scene.events.emit('weaponSpawned', weapon);
+          // Use WeaponManager if available, otherwise create directly
+          const weaponManager = (this.scene as any).weaponManager;
+          if (weaponManager) {
+            weaponManager.spawnWeapon(spawnPoint.x, spawnPoint.y, spawnPoint.weaponType);
+          } else {
+            const weapon = new Weapon(
+              this.scene,
+              spawnPoint.x,
+              spawnPoint.y,
+              spawnPoint.weaponType
+            );
+            this.scene.events.emit('weaponSpawned', weapon);
+          }
         }
         break;
       case 'item':
         if (spawnPoint.itemType) {
-          const item = new Item(
-            this.scene,
-            spawnPoint.x,
-            spawnPoint.y,
-            spawnPoint.itemType
-          );
-          this.scene.events.emit('itemSpawned', item);
+          // Use ItemManager if available, otherwise create directly
+          const itemManager = (this.scene as any).itemManager;
+          if (itemManager) {
+            itemManager.spawnItem(spawnPoint.x, spawnPoint.y, spawnPoint.itemType);
+          } else {
+            const item = new Item(
+              this.scene,
+              spawnPoint.x,
+              spawnPoint.y,
+              spawnPoint.itemType
+            );
+            this.scene.events.emit('itemSpawned', item);
+          }
         }
         break;
       case 'boss':

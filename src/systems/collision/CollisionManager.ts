@@ -8,12 +8,10 @@ import { GameConfig } from '../../config/GameConfig';
  * Handles all collision detection types in the game
  */
 export class CollisionManager {
-  private scene: Phaser.Scene;
   private spatialGrid: SpatialGrid;
   private worldBounds: Phaser.Geom.Rectangle;
 
-  constructor(scene: Phaser.Scene, worldBounds?: Phaser.Geom.Rectangle) {
-    this.scene = scene;
+  constructor(_scene: Phaser.Scene, worldBounds?: Phaser.Geom.Rectangle) {
     this.worldBounds = worldBounds || new Phaser.Geom.Rectangle(0, 0, 2000, 1000);
     this.spatialGrid = new SpatialGrid(GameConfig.SPATIAL_GRID_CELL_SIZE, this.worldBounds);
   }
@@ -30,21 +28,12 @@ export class CollisionManager {
    * Get entities near a position (for AI, pickup detection, etc.)
    */
   getEntitiesNearPosition(
-    x: number,
-    y: number,
-    radius: number,
-    filter?: (entity: BaseEntity) => boolean
+    _x: number,
+    _y: number,
+    _radius: number,
+    _filter?: (entity: BaseEntity) => boolean
   ): BaseEntity[] {
     const results: BaseEntity[] = [];
-    const radiusSquared = radius * radius;
-
-    // Get cells that overlap with the search radius
-    const searchBounds = new Phaser.Geom.Rectangle(
-      x - radius,
-      y - radius,
-      radius * 2,
-      radius * 2
-    );
 
     // This is a simplified version - in a full implementation, we'd query the spatial grid
     // For now, we'll use the spatial grid's internal structure

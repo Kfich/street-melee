@@ -8,13 +8,9 @@ import { ObjectPool } from '../utils/ObjectPool';
 export class EnemyPool {
   private pools: Map<EnemyType, ObjectPool<Enemy>> = new Map();
   private scene: Phaser.Scene;
-  private initialSize: number;
-  private maxSize: number;
 
   constructor(scene: Phaser.Scene, initialSize: number = 10, maxSize: number = 50) {
     this.scene = scene;
-    this.initialSize = initialSize;
-    this.maxSize = maxSize;
     
     // Initialize pools for each enemy type
     const enemyTypes: EnemyType[] = ['basic', 'galsia', 'donovan'];

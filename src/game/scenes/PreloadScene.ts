@@ -326,13 +326,27 @@ export class PreloadScene extends Phaser.Scene {
   }
 
   /**
-   * Load item sprites
+   * Load item sprites from assets/sprites/imgs/pickups
    */
   private loadItemSprites(): void {
-    // Load pickup sprites
+    // Load all pickup sprites with proper mappings
     this.load.image('item_apple', 'assets/sprites/imgs/pickups/apple.png');
-    this.load.image('item_chicken', 'assets/sprites/imgs/pickups/juice-can.png'); // Using juice can as chicken placeholder
-    this.load.image('item_money', 'assets/sprites/imgs/pickups/football.png'); // Using football as money placeholder
+    this.load.image('item_chicken', 'assets/sprites/imgs/pickups/juice-can.png');
+    this.load.image('item_moneyBag', 'assets/sprites/imgs/pickups/football.png');
+    this.load.image('item_goldBar', 'assets/sprites/imgs/pickups/amulet.png');
+    this.load.image('item_oneUp', 'assets/sprites/imgs/pickups/level-up.png');
+    this.load.image('item_powerUp', 'assets/sprites/imgs/pickups/lightning.png');
+    
+    // Set pixel-perfect filtering for all item textures
+    this.load.once('complete', () => {
+      const itemTextures = ['item_apple', 'item_chicken', 'item_moneyBag', 'item_goldBar', 'item_oneUp', 'item_powerUp'];
+      itemTextures.forEach(textureKey => {
+        if (this.textures.exists(textureKey)) {
+          const texture = this.textures.get(textureKey);
+          texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+        }
+      });
+    });
   }
 
   /**

@@ -24,6 +24,10 @@ export const GameConfig = {
   WEAPON_WIDTH: 24,
   WEAPON_HEIGHT: 40,
 
+  // Items/Pickups
+  ITEM_WIDTH: 32,
+  ITEM_HEIGHT: 32,
+
   // Movement multipliers
   SPEED_MULTIPLIER: 0.1,
   JUMP_MULTIPLIER: 0.2,
@@ -35,7 +39,6 @@ export const GameConfig = {
   // Input
   DASH_DOUBLE_TAP_TIME: 200, // milliseconds
   COMBO_WINDOW: 500, // milliseconds
-  INPUT_BUFFER_WINDOW: 100, // milliseconds for input buffering
 
   // Combat
   ATTACK_DURATION: 300,
@@ -46,8 +49,27 @@ export const GameConfig = {
   BLOCK_DURATION: 300, // milliseconds - how long block lasts
   BLOCK_COOLDOWN: 200, // milliseconds - cooldown between blocks
   
+  // Parry/Counter System
+  PARRY_WINDOW: 100, // milliseconds - window for perfect parry timing
+  PARRY_COOLDOWN: 500, // milliseconds - cooldown after parry
+  COUNTER_ATTACK_DAMAGE_MULTIPLIER: 1.5, // Counter attacks deal 50% more damage
+  
+  // Vault System
+  VAULT_JUMP_POWER: 250, // Vertical velocity for vault jump
+  VAULT_ATTACK_DAMAGE: 15, // Damage dealt during vault attack
+  VAULT_INVINCIBILITY_DURATION: 200, // ms of invincibility during vault
+  
   // Spatial Partitioning
   SPATIAL_GRID_CELL_SIZE: 200, // Size of each grid cell for collision detection
+  
+  // Score System
+  SCORE_ENEMY_BASIC: 100,
+  SCORE_ENEMY_GALSIA: 150,
+  SCORE_ENEMY_DONOVAN: 200,
+  SCORE_BOSS: 1000,
+  SCORE_COMBO_MULTIPLIER: 1.1, // 10% bonus per combo hit
+  SCORE_PERFECT_CLEAR_BONUS: 500,
+  SCORE_TIME_BONUS_PER_SECOND: 10, // Bonus points per second remaining
   
   // Hit Stop (time freeze on hits)
   HIT_STOP_LIGHT: 30, // ms for light hits

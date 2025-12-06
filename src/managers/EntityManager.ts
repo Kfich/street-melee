@@ -111,9 +111,13 @@ export class EntityManager {
    */
   getWeapons(): Weapon[] {
     if (this.isDirty || this.cachedWeapons === null) {
-      this.cachedWeapons = Array.from(this.entities).filter(
-        (e): e is Weapon => e instanceof Weapon && e.sprite && e.sprite.active
-      );
+      const weapons: Weapon[] = [];
+      for (const e of this.entities) {
+        if (e instanceof Weapon && e.sprite && e.sprite.active) {
+          weapons.push(e);
+        }
+      }
+      this.cachedWeapons = weapons;
     }
     return this.cachedWeapons;
   }

@@ -17,6 +17,9 @@ import { Hitbox } from '../../systems/combat/Hitbox';
 import { Boss } from '../../entities/bosses/Boss';
 import { WeaponManager } from '../../systems/weapon/WeaponManager';
 import { ItemManager } from '../../systems/item/ItemManager';
+import { RandomItemSpawner } from '../../systems/item/RandomItemSpawner';
+import { RewardSystem } from '../../systems/reward/RewardSystem';
+import { SpawnTracker } from '../../systems/tracking/SpawnTracker';
 import { GrabSystem } from '../../systems/combat/GrabSystem';
 import { Weapon } from '../../entities/weapons/Weapon';
 import { Item } from '../../entities/items/Item';
@@ -51,6 +54,9 @@ export class GameScene extends Phaser.Scene {
   private specialMoveSystem!: SpecialMoveSystem;
   private weaponManager!: WeaponManager;
   private itemManager!: ItemManager;
+  private rewardSystem!: RewardSystem;
+  private randomItemSpawner!: RandomItemSpawner;
+  private spawnTracker!: SpawnTracker;
   private grabSystem!: GrabSystem;
   private levelManager!: LevelManager;
   private roomManager!: RoomManager;
@@ -70,6 +76,7 @@ export class GameScene extends Phaser.Scene {
   private currentLevelIndex: number = 0;
   private cutsceneTriggerSystem!: CutsceneTriggerSystem;
   private bossSceneManager!: BossSceneManager;
+  private playerScore: number = 0; // Track player score
   private widgetManager!: WidgetManager;
   private playerUpdateManager!: PlayerUpdateManager;
   private enemyManager!: EnemyManager;
@@ -107,7 +114,27 @@ export class GameScene extends Phaser.Scene {
       this.comboSystem = new ComboSystem(this);
       this.specialMoveSystem = new SpecialMoveSystem(this);
       this.weaponManager = new WeaponManager(this);
-      this.itemManager = new ItemManager(this);
+      // Initialize RewardSystem first
+      this.rewardSystem = new RewardSystem(this);
+      (this as any).rewardSystem = this.rewardSystem; // Expose for Item access
+      
+      this.itemManager = new ItemManager(this, this.rewardSystem);
+      
+      // Initialize random item spawner
+      this.randomItemSpawner = new RandomItemSpawner(this, this.itemManager, {
+        minDistance: 150,
+        maxDistance: 400,
+        spawnAheadDistance: 1000,
+        spawnBehindDistance: 500,
+        groundY: height - 100, // Ground level
+        itemHeightOffset: 30,
+        spawnChunkSize: 3,
+        spawnChunkInterval: 600
+      });
+      
+      // Initialize spawn tracker
+      this.spawnTracker = new SpawnTracker(this);
+      
       this.grabSystem = new GrabSystem(this);
     
     // Initialize room manager (handles backgrounds and room transitions)
@@ -150,6 +177,22 @@ export class GameScene extends Phaser.Scene {
     // Set up level event listeners
     this.setupLevelEvents();
     
+    // Initialize random item spawner when level manager is ready
+    this.time.delayedCall(GameConfig.INIT_DELAY_MEDIUM, () => {
+      if (this.randomItemSpawner && this.levelManager) {
+        const levelWidth = this.levelManager.getLevelWidth();
+        const levelHeight = this.levelManager.getLevelHeight();
+        const groundY = levelHeight - 100; // Ground level
+        this.randomItemSpawner.initialize(levelWidth, levelHeight, groundY);
+        this.randomItemSpawner.reset();
+      }
+      
+      // Emit initial spawn stats
+      if (this.spawnTracker) {
+        this.events.emit('spawnStatsUpdated', this.getSpawnStats());
+      }
+    });
+    
     // Set up combat effect listeners
     this.setupCombatEffects();
     
@@ -170,6 +213,11 @@ export class GameScene extends Phaser.Scene {
     
     // Initialize room system (loads first room and backgrounds)
     this.roomManager.initializeLevel('level1');
+    
+    // Initialize spawn tracker with first room
+    if (this.spawnTracker) {
+      this.spawnTracker.setSceneId('level1_room1');
+    }
     
     // Show intro cutscene when game starts (with small delay to ensure everything is loaded)
     this.time.delayedCall(GameConfig.INIT_DELAY_VERY_LONG, () => {
@@ -444,10 +492,51 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Get current spawn statistics
+   */
+  getSpawnStats() {
+    if (!this.spawnTracker) {
+      return {
+        weapons: { active: 0, spawned: 0, collected: 0, byType: new Map() },
+        items: { active: 0, spawned: 0, collected: 0, byType: new Map() }
+      };
+    }
+
+    const sceneStats = this.spawnTracker.getCurrentSceneStats();
+    if (!sceneStats) {
+      return {
+        weapons: { active: 0, spawned: 0, collected: 0, byType: new Map() },
+        items: { active: 0, spawned: 0, collected: 0, byType: new Map() }
+      };
+    }
+
+    return {
+      weapons: {
+        active: sceneStats.weapons.active,
+        spawned: sceneStats.weapons.spawned,
+        collected: sceneStats.weapons.collected,
+        byType: sceneStats.weapons.byType
+      },
+      items: {
+        active: sceneStats.items.active,
+        spawned: sceneStats.items.spawned,
+        collected: sceneStats.items.collected,
+        byType: sceneStats.items.byType
+      }
+    };
+  }
+
   private setupLevelEvents() {
     // Room manager events
     this.events.on('roomLoaded', (data: { roomId: string; roomName: string; width: number; height: number }) => {
       console.log(`[GameScene] Room loaded: ${data.roomName} (${data.roomId})`);
+      
+      // Update spawn tracker with new scene ID
+      if (this.spawnTracker) {
+        this.spawnTracker.setSceneId(data.roomId);
+      }
+      
       // Update physics world bounds for new room (including vertical bounds for depth navigation)
       this.physics.world.setBounds(0, 0, data.width, data.height);
       
@@ -479,6 +568,16 @@ export class GameScene extends Phaser.Scene {
           }
         });
       }
+      
+      // Re-initialize spawner when room changes
+      if (this.randomItemSpawner) {
+        const groundY = data.height - 100;
+        this.randomItemSpawner.initialize(data.width, data.height, groundY);
+        this.randomItemSpawner.reset();
+      }
+      
+      // Emit spawn stats update event
+      this.events.emit('spawnStatsUpdated', this.getSpawnStats());
     });
 
     // Handle room transition start - update player position IMMEDIATELY
@@ -551,7 +650,9 @@ export class GameScene extends Phaser.Scene {
 
     // Enemy defeats are now handled by EnemyManager
     // Keep this listener for non-enemy entities if needed
+    // Score system - calculate and award points
     this.events.on('entityDefeated', (entity: BaseEntity) => {
+      this.calculateDefeatScore(entity);
       // Enemy defeats handled by EnemyManager
       if (!entity.sprite.getData('isEnemy')) {
         // Handle other entity types if needed
@@ -570,15 +671,15 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.events.on('weaponSpawned', (weapon: Weapon) => {
-      const allWeapons = this.weaponManager.getAll();
-      allWeapons.push(weapon);
+      // Weapons are managed by WeaponManager automatically
+      // Just ensure ground collision is set up
       this.physics.add.collider(weapon.sprite, this.ground);
     });
 
-    this.events.on('itemSpawned', (item: Item) => {
+    this.events.on('itemSpawned', (_item: Item) => {
       // Items are managed by ItemManager automatically
-      // Just ensure it's added to the scene
-      this.itemManager.getAll().push(item);
+      // No additional setup needed - ItemManager handles everything
+      // Spawn tracking is handled by SpawnTracker via event listeners
     });
 
     // Wave events
@@ -732,14 +833,56 @@ export class GameScene extends Phaser.Scene {
     });
     
     // Listen for item collection events
-    this.events.on('itemCollected', (data: { type: string; points?: number; item: any }) => {
+    this.events.on('itemCollected', (data: { type: string; points?: number; item: any; rewardDisplay?: any }) => {
       this.audioManager.playSound('itemPickup');
+      
+      // Show reward popup if available
+      if (data.rewardDisplay && data.item) {
+        this.visualEffects.createItemRewardPopup(
+          data.item.sprite.x,
+          data.item.sprite.y,
+          data.rewardDisplay
+        );
+      }
+      
       // Update widgets (with null check)
       if (this.widgetManager) {
         if (data.points) {
           this.widgetManager.addScore(data.points);
         }
         this.widgetManager.incrementPickup();
+      }
+      
+      // Update spawn stats
+      if (this.spawnTracker) {
+        this.events.emit('spawnStatsUpdated', this.getSpawnStats());
+      }
+    });
+    
+    // Listen for weapon pickup events
+    this.events.on('weaponPickedUp', () => {
+      // Update spawn stats
+      if (this.spawnTracker) {
+        this.events.emit('spawnStatsUpdated', this.getSpawnStats());
+      }
+    });
+    
+    // Listen for spawn stats updates (for UI display or debugging)
+    this.events.on('spawnStatsUpdated', (stats: any) => {
+      // Log spawn stats for debugging (can be removed or used for UI)
+      if (console && console.log) {
+        console.log('[GameScene] Spawn Stats:', {
+          weapons: {
+            active: stats.weapons?.active || 0,
+            spawned: stats.weapons?.spawned || 0,
+            collected: stats.weapons?.collected || 0
+          },
+          items: {
+            active: stats.items?.active || 0,
+            spawned: stats.items?.spawned || 0,
+            collected: stats.items?.collected || 0
+          }
+        });
       }
     });
     
@@ -851,6 +994,65 @@ export class GameScene extends Phaser.Scene {
     this.events.on('weaponSwing', (data: { weapon: any; character: any; x: number; y: number; facingRight: boolean; weaponType: string }) => {
       // Create weapon swing visual effects
       this.visualEffects.createWeaponSwingEffect(data.x, data.y, data.facingRight, data.weaponType);
+    });
+
+    // Listen for vault events
+    this.events.on('vaultPerformed', (data: { x: number; y: number; target: any }) => {
+      // Create vault visual effects
+      this.visualEffects.createVaultEffect(data.x, data.y);
+    });
+
+    this.events.on('vaultAttack', (data: { x: number; y: number; attacker: any }) => {
+      // Create vault attack visual effects
+      this.visualEffects.createVaultAttackEffect(data.x, data.y);
+      this.audioManager.playSound('punch', 0.7);
+    });
+
+    // Listen for parry events
+    this.events.on('parrySuccessful', (data: { x: number; y: number; characterType: string; attacker?: any }) => {
+      // Create parry visual effects
+      this.visualEffects.createParryEffect(data.x, data.y);
+      this.audioManager.playSound('special', 0.8); // Special sound for parry
+      this.visualEffects.screenShakeLight(50);
+    });
+
+    this.events.on('counterAttackPerformed', (data: { x: number; y: number; characterType: string }) => {
+      // Create counter attack visual effects
+      this.visualEffects.createCounterAttackEffect(data.x, data.y);
+      this.audioManager.playSound('special', 1.0); // Strong sound for counter
+    });
+
+    // Listen for air combat events
+    this.events.on('airComboHit', (data: { playerIndex: number; comboCount: number; x: number; y: number }) => {
+      // Visual feedback for air combos
+      if (data.comboCount >= 2) {
+        this.visualEffects.createAirComboEffect(data.x, data.y, data.comboCount);
+      }
+    });
+
+    this.events.on('airThrowPerformed', (data: { x: number; y: number; direction: string }) => {
+      // Visual effects for air throws
+      this.visualEffects.createAirThrowEffect(data.x, data.y);
+      this.audioManager.playSound('throw', 1.0);
+    });
+
+    // Listen for weapon combo events
+    this.events.on('weaponComboHit', (data: { playerIndex: number; comboCount: number; weaponType: string; x: number; y: number }) => {
+      // Visual feedback for weapon combos
+      this.visualEffects.createWeaponComboEffect(data.x, data.y, data.comboCount, data.weaponType);
+    });
+
+    // Listen for throw variation events
+    this.events.on('wallBounce', (data: { x: number; y: number; target: any }) => {
+      // Visual effects for wall bounces
+      this.visualEffects.createWallBounceEffect(data.x, data.y);
+      this.audioManager.playSound('punch', 0.8);
+    });
+
+    this.events.on('multiEnemyThrow', (data: { x: number; y: number; thrownEnemy: any; hitEnemy: any }) => {
+      // Visual effects for multi-enemy throws
+      this.visualEffects.createMultiEnemyThrowEffect(data.x, data.y);
+      this.audioManager.playSound('throw', 1.0);
     });
 
     // Listen for hit stop events
@@ -1072,8 +1274,22 @@ export class GameScene extends Phaser.Scene {
       this.audioManager.playSound('throw', 1.0);
     });
 
-    this.events.on('itemCollected', () => {
+    this.events.on('itemCollected', (data: { rewardDisplay?: any; item: any }) => {
       this.audioManager.playSound('itemPickup', 0.7);
+      
+      // Show reward popup
+      if (data.rewardDisplay && data.item) {
+        this.visualEffects.createItemRewardPopup(
+          data.item.sprite.x,
+          data.item.sprite.y,
+          data.rewardDisplay
+        );
+      }
+    });
+    
+    // Listen for item reward popup events
+    this.events.on('itemRewardPopup', (data: { x: number; y: number; rewardDisplay: any }) => {
+      this.visualEffects.createItemRewardPopup(data.x, data.y, data.rewardDisplay);
     });
 
     this.events.on('knockdown', () => {
@@ -1262,6 +1478,71 @@ export class GameScene extends Phaser.Scene {
   /**
    * Show outro cutscene when game is completed
    */
+  /**
+   * Calculate score for defeating an entity
+   */
+  private calculateDefeatScore(entity: BaseEntity): void {
+    let baseScore = 0;
+    const isEnemy = entity.sprite?.getData('isEnemy');
+    const isBoss = entity.sprite?.getData('isBoss');
+    
+    if (isBoss) {
+      baseScore = GameConfig.SCORE_BOSS;
+    } else if (isEnemy) {
+      // Determine enemy type from sprite data or entity type
+      const enemyType = entity.sprite?.getData('enemyType') || 'basic';
+      switch (enemyType) {
+        case 'galsia':
+          baseScore = GameConfig.SCORE_ENEMY_GALSIA;
+          break;
+        case 'donovan':
+          baseScore = GameConfig.SCORE_ENEMY_DONOVAN;
+          break;
+        default:
+          baseScore = GameConfig.SCORE_ENEMY_BASIC;
+      }
+    } else {
+      // Not an enemy or boss, no score
+      return;
+    }
+    
+    // Apply combo multiplier if player has active combo
+    let comboMultiplier = 1.0;
+    if (this.currentComboCounts.size > 0) {
+      const maxCombo = Math.max(...Array.from(this.currentComboCounts.values()));
+      if (maxCombo >= 3) {
+        // 10% bonus per combo hit above 2
+        comboMultiplier = 1.0 + ((maxCombo - 2) * (GameConfig.SCORE_COMBO_MULTIPLIER - 1.0));
+      }
+    }
+    
+    // Calculate final score
+    const finalScore = Math.floor(baseScore * comboMultiplier);
+    
+    // Update player score (use player 1 for now, can be extended for multiplayer)
+    if (this.widgetManager) {
+      // Track score internally - widget manager will handle display
+      if (!this.playerScore) {
+        this.playerScore = 0;
+      }
+      this.playerScore += finalScore;
+      this.widgetManager.setScore(this.playerScore);
+    }
+    
+    // Emit score update event
+    this.events.emit('scoreUpdated', finalScore);
+    
+    // Show score popup
+    if (entity.sprite) {
+      this.visualEffects.createScorePopup(
+        entity.sprite.x,
+        entity.sprite.y - 30,
+        finalScore,
+        comboMultiplier > 1.0
+      );
+    }
+  }
+
   private showOutroCutscene(score: number): void {
     // Check for completion outro
     const outroCutscene = this.storyManager.getCutscene('outro_completion');
@@ -1443,9 +1724,22 @@ export class GameScene extends Phaser.Scene {
       this.weaponManager.update();
     }
 
-    // Update item manager
+    // Update item manager (with players for magnetic collection)
     if (this.itemManager) {
-      this.itemManager.update();
+      this.itemManager.update(this.players);
+    }
+
+    // Update random item spawner
+    if (this.randomItemSpawner && this.players.length > 0) {
+      const playerX = this.players[0].sprite.x;
+      this.randomItemSpawner.update(playerX);
+    }
+
+    // Update spawn tracker with active counts (every frame for real-time stats)
+    if (this.spawnTracker && this.weaponManager && this.itemManager) {
+      const activeWeapons = this.weaponManager.getActiveCount();
+      const activeItems = this.itemManager.getActiveCount();
+      this.spawnTracker.updateActiveCounts(activeWeapons, activeItems);
     }
 
     // Update grab system

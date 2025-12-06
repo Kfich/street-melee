@@ -317,12 +317,12 @@ export class Weapon extends BaseEntity {
   /**
    * Reset weapon state for object pooling
    */
-  reset(x: number, y: number, weaponType: WeaponType): void {
+  reset(x?: number, y?: number, weaponType?: WeaponType): void {
     // Reset base entity
     super.reset(x, y);
     
-    // Update weapon type if different
-    if (weaponType !== this.weaponType) {
+    // Update weapon type if different and provided
+    if (weaponType && weaponType !== this.weaponType) {
       this.weaponType = weaponType;
       this.stats = WEAPON_STATS[weaponType];
     }

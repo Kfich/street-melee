@@ -8,13 +8,9 @@ import { ObjectPool } from '../utils/ObjectPool';
 export class WeaponPool {
   private pools: Map<WeaponType, ObjectPool<Weapon>> = new Map();
   private scene: Phaser.Scene;
-  private initialSize: number;
-  private maxSize: number;
 
   constructor(scene: Phaser.Scene, initialSize: number = 5, maxSize: number = 30) {
     this.scene = scene;
-    this.initialSize = initialSize;
-    this.maxSize = maxSize;
     
     // Initialize pools for each weapon type
     const weaponTypes: WeaponType[] = ['pipe', 'knife', 'bottle', 'bat'];

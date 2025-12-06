@@ -9,6 +9,8 @@ import { Hitbox } from '../combat/Hitbox';
 export class SpatialGrid {
   private cellSize: number;
   private grid: Map<string, GridCell>;
+  // worldBounds stored for setWorldBounds method, may be used in future implementations
+  // @ts-ignore - Stored for API consistency, set by setWorldBounds()
   private worldBounds: Phaser.Geom.Rectangle;
 
   constructor(cellSize: number = 200, worldBounds?: Phaser.Geom.Rectangle) {
@@ -17,14 +19,6 @@ export class SpatialGrid {
     this.worldBounds = worldBounds || new Phaser.Geom.Rectangle(0, 0, 2000, 1000);
   }
 
-  /**
-   * Get grid cell key from world coordinates
-   */
-  private getCellKey(x: number, y: number): string {
-    const cellX = Math.floor(x / this.cellSize);
-    const cellY = Math.floor(y / this.cellSize);
-    return `${cellX},${cellY}`;
-  }
 
   /**
    * Get or create a grid cell
@@ -105,7 +99,7 @@ export class SpatialGrid {
     const processedPairs = new Set<string>();
 
     // Check each cell
-    this.grid.forEach((cell, cellKey) => {
+    this.grid.forEach((cell, _cellKey) => {
       // Check hitboxes against entities in the same cell
       cell.hitboxes.forEach(hitbox => {
         if (!hitbox.active) return;

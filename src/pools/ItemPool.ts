@@ -8,13 +8,9 @@ import { ObjectPool } from '../utils/ObjectPool';
 export class ItemPool {
   private pools: Map<ItemType, ObjectPool<Item>> = new Map();
   private scene: Phaser.Scene;
-  private initialSize: number;
-  private maxSize: number;
 
   constructor(scene: Phaser.Scene, initialSize: number = 5, maxSize: number = 30) {
     this.scene = scene;
-    this.initialSize = initialSize;
-    this.maxSize = maxSize;
     
     // Initialize pools for each item type
     const itemTypes: ItemType[] = ['apple', 'chicken', 'moneyBag', 'goldBar', 'oneUp', 'powerUp'];
@@ -41,7 +37,7 @@ export class ItemPool {
    */
   private resetItem(item: Item): void {
     // Reset at (0, 0) - will be repositioned when acquired
-    item.reset(0, 0);
+    item.reset(0, 0, item.getItemType());
   }
 
   /**
@@ -56,8 +52,8 @@ export class ItemPool {
     
     const item = pool.acquire();
     
-    // Reset item to new position (this will reinitialize all state)
-    item.reset(x, y);
+    // Reset item to new position and type (this will reinitialize all state)
+    item.reset(x, y, type);
     
     return item;
   }

@@ -116,7 +116,7 @@ export class GrabSystem {
   }
 
   /**
-   * Perform a throw
+   * Perform a throw with enhanced variations
    */
   performThrow(graber: BaseCharacter, direction: 'left' | 'right' | 'up' | 'down', isSlam: boolean = false): boolean {
     const grab = this.activeGrabs.get(graber);
@@ -124,20 +124,39 @@ export class GrabSystem {
 
     const target = grab.target;
     const targetBody = target.sprite.body as Phaser.Physics.Arcade.Body;
+    if (!targetBody) return false;
     
-    // Calculate throw force
+    // Check for wall bounce throws
+    const graberX = graber.sprite.x;
+    const scene = this.scene as Phaser.Scene;
+    const worldBounds = scene.physics.world.bounds;
+    const isNearLeftWall = graberX < worldBounds.width * 0.2;
+    const isNearRightWall = graberX > worldBounds.width * 0.8;
+    
+    // Calculate throw force with wall bounce potential
     let throwX = 0;
     let throwY = 0;
     let damage = 20;
+    let willBounce = false;
 
     switch (direction) {
       case 'left':
         throwX = -300;
         throwY = -50;
+        // Enhanced wall bounce if near left wall
+        if (isNearLeftWall) {
+          throwX = -400; // Stronger throw toward wall
+          willBounce = true;
+        }
         break;
       case 'right':
         throwX = 300;
         throwY = -50;
+        // Enhanced wall bounce if near right wall
+        if (isNearRightWall) {
+          throwX = 400; // Stronger throw toward wall
+          willBounce = true;
+        }
         break;
       case 'up':
         throwX = 0;
@@ -158,6 +177,31 @@ export class GrabSystem {
     // Apply damage
     target.takeDamage(damage);
 
+    // Wall bounce effect
+    if (willBounce) {
+      // Set up wall bounce detection
+      this.scene.time.delayedCall(200, () => {
+        if (target.sprite && target.sprite.active) {
+          const targetX = target.sprite.x;
+          // Check if hit wall
+          if ((targetX <= worldBounds.x + 10 && throwX < 0) || 
+              (targetX >= worldBounds.width - 10 && throwX > 0)) {
+            // Bounce back with reduced force
+            const bounceBody = target.sprite.body as Phaser.Physics.Arcade.Body;
+            if (bounceBody) {
+              bounceBody.setVelocityX(-throwX * 0.6); // Bounce back at 60% force
+              target.takeDamage(15); // Additional damage from wall bounce
+              this.scene.events.emit('wallBounce', {
+                x: target.sprite.x,
+                y: target.sprite.y,
+                target: target
+              });
+            }
+          }
+        }
+      });
+    }
+
     // Screen shake for slams
     if (isSlam) {
       this.scene.cameras.main.shake(200, 0.01);
@@ -172,6 +216,61 @@ export class GrabSystem {
     // Visual feedback
     this.createThrowEffect(target.sprite, isSlam);
 
+    return true;
+  }
+  
+  /**
+   * Perform multi-enemy throw (throw one enemy into another)
+   */
+  performMultiEnemyThrow(graber: BaseCharacter, direction: 'left' | 'right' | 'up' | 'down', nearbyEnemies: BaseEntity[]): boolean {
+    const grab = this.activeGrabs.get(graber);
+    if (!grab || nearbyEnemies.length === 0) return false;
+    
+    // Perform normal throw first
+    const throwSuccess = this.performThrow(graber, direction, false);
+    if (!throwSuccess) return false;
+    
+    const target = grab.target;
+    
+    // Check if thrown enemy hits another enemy
+    this.scene.time.delayedCall(150, () => {
+      if (!target.sprite || !target.sprite.active) return;
+      
+      for (const otherEnemy of nearbyEnemies) {
+        if (otherEnemy === target || !otherEnemy.sprite || !otherEnemy.sprite.active) continue;
+        
+        const distance = Phaser.Math.Distance.Between(
+          target.sprite.x,
+          target.sprite.y,
+          otherEnemy.sprite.x,
+          otherEnemy.sprite.y
+        );
+        
+        // If thrown enemy hits another enemy
+        if (distance < 50) {
+          // Both take damage
+          otherEnemy.takeDamage(25);
+          target.takeDamage(10); // Thrown enemy also takes damage
+          
+          // Knockback for hit enemy
+          const otherBody = otherEnemy.sprite.body as Phaser.Physics.Arcade.Body;
+          if (otherBody) {
+            const knockbackX = target.sprite.x > otherEnemy.sprite.x ? 200 : -200;
+            otherBody.setVelocity(knockbackX, -100);
+          }
+          
+          this.scene.events.emit('multiEnemyThrow', {
+            x: otherEnemy.sprite.x,
+            y: otherEnemy.sprite.y,
+            thrownEnemy: target,
+            hitEnemy: otherEnemy
+          });
+          
+          break; // Only hit one enemy
+        }
+      }
+    });
+    
     return true;
   }
 
@@ -222,7 +321,7 @@ export class GrabSystem {
   }
 
   /**
-   * Vault over enemy (switch grab position)
+   * Vault over enemy (switch grab position) with enhanced mechanics
    */
   vault(graber: BaseCharacter): boolean {
     const grab = this.activeGrabs.get(graber);

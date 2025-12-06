@@ -13,6 +13,10 @@ export class EnemyAI {
   private spatialGrid?: SpatialGrid;
   private avoidanceRadius: number = 60; // Distance to maintain from other enemies
   private obstacleCheckDistance: number = 50; // Distance to check for obstacles ahead
+  private retreatHealthThreshold: number = 0.3; // Retreat when health below 30%
+  private groupCoordinationRadius: number = 150; // Radius for group coordination
+  private coordinationUpdateCounter: number = 0;
+  private coordinationUpdateFrequency: number = 10; // Update every 10 frames
 
   constructor(entityManager: EntityManager, spatialGrid?: SpatialGrid) {
     this.entityManager = entityManager;
