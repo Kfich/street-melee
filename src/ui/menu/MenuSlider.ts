@@ -5,13 +5,12 @@ import { MenuTheme } from './MenuTheme';
  * Interactive slider component for settings
  */
 export class MenuSlider {
-  private scene: Phaser.Scene;
   private theme: MenuTheme;
   private container: Phaser.GameObjects.Container;
   private label: Phaser.GameObjects.Text;
-  private track: Phaser.GameObjects.Rectangle;
-  private fill: Phaser.GameObjects.Rectangle;
-  private handle: Phaser.GameObjects.Rectangle;
+  private track: Phaser.GameObjects.Graphics;
+  private fill: Phaser.GameObjects.Graphics;
+  private handle: Phaser.GameObjects.Graphics;
   private valueText: Phaser.GameObjects.Text;
   private interactiveArea: Phaser.GameObjects.Rectangle;
   private value: number = 0.5;
@@ -30,7 +29,6 @@ export class MenuSlider {
     max: number = 1,
     onChange?: (value: number) => void
   ) {
-    this.scene = scene;
     this.theme = theme;
     this.value = Phaser.Math.Clamp(initialValue, min, max);
     this.min = min;
@@ -52,28 +50,38 @@ export class MenuSlider {
     });
     this.label.setOrigin(0.5, 0);
 
-    // Create track background
-    this.track = scene.add.rectangle(0, 0, trackWidth, trackHeight, this.theme.colors.secondary);
-    this.track.setStrokeStyle(2, this.theme.colors.text);
+    const borderRadius = 10;
+    
+    // Create track background - rounded
+    this.track = scene.add.graphics();
+    this.track.fillStyle(this.theme.colors.secondary, 1);
+    this.track.fillRoundedRect(-trackWidth / 2, -trackHeight / 2, trackWidth, trackHeight, borderRadius);
+    this.track.lineStyle(2, this.theme.colors.text, 1);
+    this.track.strokeRoundedRect(-trackWidth / 2, -trackHeight / 2, trackWidth, trackHeight, borderRadius);
 
-    // Create fill
+    // Create fill - rounded
     const fillWidth = trackWidth * ((this.value - this.min) / (this.max - this.min));
-    this.fill = scene.add.rectangle(
-      -trackWidth / 2 + fillWidth / 2,
-      0,
+    this.fill = scene.add.graphics();
+    this.fill.fillStyle(this.theme.colors.accent, 1);
+    this.fill.fillRoundedRect(
+      -trackWidth / 2,
+      -trackHeight / 2,
       fillWidth,
       trackHeight,
-      this.theme.colors.accent
+      borderRadius
     );
 
-    // Create handle
+    // Create handle - rounded
     const handleX = -trackWidth / 2 + fillWidth;
-    this.handle = scene.add.rectangle(handleX, 0, handleSize, handleSize, this.theme.colors.selected);
-    this.handle.setStrokeStyle(2, this.theme.colors.text);
+    this.handle = scene.add.graphics();
+    this.handle.fillStyle(this.theme.colors.selected, 1);
+    this.handle.fillRoundedRect(handleX - handleSize / 2, -handleSize / 2, handleSize, handleSize, handleSize / 2);
+    this.handle.lineStyle(2, this.theme.colors.text, 1);
+    this.handle.strokeRoundedRect(handleX - handleSize / 2, -handleSize / 2, handleSize, handleSize, handleSize / 2);
 
-    // Create value text
+    // Create value text - adjusted for 8-bit font
     this.valueText = scene.add.text(trackWidth / 2 + 40, 0, `${Math.round(this.value * 100)}%`, {
-      fontSize: '20px',
+      fontSize: '12px', // Reduced for 8-bit font
       fontFamily: this.theme.typography.labelFont,
       color: `#${this.theme.colors.text.toString(16).padStart(6, '0')}`,
     });
@@ -136,20 +144,29 @@ export class MenuSlider {
 
   private updateVisuals() {
     const trackWidth = 300;
+    const trackHeight = 20;
+    const handleSize = 30;
+    const borderRadius = 10;
     const fillWidth = trackWidth * ((this.value - this.min) / (this.max - this.min));
     const handleX = -trackWidth / 2 + fillWidth;
 
-    // Update fill
-    this.fill.setSize(fillWidth, 20);
-    this.fill.setX(-trackWidth / 2 + fillWidth / 2);
+    // Update fill - redraw rounded rectangle
+    this.fill.clear();
+    this.fill.fillStyle(this.theme.colors.accent, 1);
+    this.fill.fillRoundedRect(
+      -trackWidth / 2,
+      -trackHeight / 2,
+      fillWidth,
+      trackHeight,
+      borderRadius
+    );
 
-    // Update handle
-    this.scene.tweens.add({
-      targets: this.handle,
-      x: handleX,
-      duration: 100,
-      ease: 'Power2',
-    });
+    // Update handle - redraw rounded rectangle
+    this.handle.clear();
+    this.handle.fillStyle(this.theme.colors.selected, 1);
+    this.handle.fillRoundedRect(handleX - handleSize / 2, -handleSize / 2, handleSize, handleSize, handleSize / 2);
+    this.handle.lineStyle(2, this.theme.colors.text, 1);
+    this.handle.strokeRoundedRect(handleX - handleSize / 2, -handleSize / 2, handleSize, handleSize, handleSize / 2);
 
     // Update value text
     this.valueText.setText(`${Math.round(this.value * 100)}%`);

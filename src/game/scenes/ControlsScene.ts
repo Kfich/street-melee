@@ -11,7 +11,7 @@ export class ControlsScene extends BaseMenuScene {
   protected createMenu() {
     const { width, height } = this.cameras.main;
 
-    // Title
+    // Title with animation
     const title = this.add.text(width / 2, 50, 'CONTROLS', {
       fontSize: this.theme.typography.titleSize,
       fontFamily: this.theme.typography.titleFont,
@@ -21,10 +21,22 @@ export class ControlsScene extends BaseMenuScene {
       fontStyle: 'bold',
     });
     title.setOrigin(0.5).setDepth(1001);
+    title.setAlpha(0);
+    this.tweens.add({
+      targets: title,
+      alpha: 1,
+      duration: 400,
+      ease: 'Power2',
+    });
 
     // Create scrollable container for controls
     const containerY = 120;
     let currentY = containerY;
+
+    // Divider line
+    const divider1 = this.add.line(0, 0, width * 0.1, currentY, width * 0.9, currentY, 0xffffff, 0.3);
+    divider1.setDepth(1001);
+    currentY += 20;
 
     // Player 1 Controls
     const player1Title = this.add.text(width / 2, currentY, 'PLAYER 1', {
@@ -34,7 +46,7 @@ export class ControlsScene extends BaseMenuScene {
       fontStyle: 'bold',
     });
     player1Title.setOrigin(0.5).setDepth(1001);
-    currentY += 40;
+    currentY += 45;
 
     const player1Controls = [
       'Movement: Arrow Keys',
@@ -49,18 +61,31 @@ export class ControlsScene extends BaseMenuScene {
       'Jump (while grabbing): Vault',
     ];
 
-    player1Controls.forEach((control) => {
+    player1Controls.forEach((control, index) => {
       const text = this.add.text(width / 2, currentY, control, {
         fontSize: '18px',
         fontFamily: this.theme.typography.labelFont,
         color: `#${this.theme.colors.text.toString(16).padStart(6, '0')}`,
       });
       text.setOrigin(0.5).setDepth(1001);
+      text.setAlpha(0);
+      // Stagger animation
+      this.tweens.add({
+        targets: text,
+        alpha: 1,
+        duration: 300,
+        delay: index * 30,
+        ease: 'Power2',
+      });
       currentY += 28;
     });
 
     // Player 2 Controls
+    currentY += 30;
+    const divider2 = this.add.line(0, 0, width * 0.1, currentY, width * 0.9, currentY, 0xffffff, 0.3);
+    divider2.setDepth(1001);
     currentY += 20;
+    
     const player2Title = this.add.text(width / 2, currentY, 'PLAYER 2', {
       fontSize: '32px',
       fontFamily: this.theme.typography.itemFont,
@@ -68,7 +93,7 @@ export class ControlsScene extends BaseMenuScene {
       fontStyle: 'bold',
     });
     player2Title.setOrigin(0.5).setDepth(1001);
-    currentY += 40;
+    currentY += 45;
 
     const player2Controls = [
       'Movement: WASD',
@@ -83,26 +108,39 @@ export class ControlsScene extends BaseMenuScene {
       'Jump (while grabbing): Vault',
     ];
 
-    player2Controls.forEach((control) => {
+    player2Controls.forEach((control, index) => {
       const text = this.add.text(width / 2, currentY, control, {
         fontSize: '18px',
         fontFamily: this.theme.typography.labelFont,
         color: `#${this.theme.colors.text.toString(16).padStart(6, '0')}`,
       });
       text.setOrigin(0.5).setDepth(1001);
+      text.setAlpha(0);
+      // Stagger animation
+      this.tweens.add({
+        targets: text,
+        alpha: 1,
+        duration: 300,
+        delay: (player1Controls.length + index) * 30 + 200,
+        ease: 'Power2',
+      });
       currentY += 28;
     });
 
     // Tips
+    currentY += 30;
+    const divider3 = this.add.line(0, 0, width * 0.1, currentY, width * 0.9, currentY, 0xffffff, 0.3);
+    divider3.setDepth(1001);
     currentY += 20;
-    const tipsTitle = this.add.text(width / 2, currentY, 'TIPS', {
+    
+    const tipsTitle = this.add.text(width / 2, currentY, '💡 TIPS', {
       fontSize: '28px',
       fontFamily: this.theme.typography.itemFont,
       color: `#${this.theme.colors.selected.toString(16).padStart(6, '0')}`,
       fontStyle: 'bold',
     });
     tipsTitle.setOrigin(0.5).setDepth(1001);
-    currentY += 35;
+    currentY += 40;
 
     const tips = [
       'Mash Attack button for combos',
@@ -111,14 +149,23 @@ export class ControlsScene extends BaseMenuScene {
       'Down throw causes screen shake!',
     ];
 
-    tips.forEach((tip) => {
-      const text = this.add.text(width / 2, currentY, tip, {
+    tips.forEach((tip, index) => {
+      const text = this.add.text(width / 2, currentY, `• ${tip}`, {
         fontSize: '16px',
         fontFamily: this.theme.typography.labelFont,
         color: `#${this.theme.colors.textSecondary.toString(16).padStart(6, '0')}`,
         fontStyle: 'italic',
       });
       text.setOrigin(0.5).setDepth(1001);
+      text.setAlpha(0);
+      // Stagger animation
+      this.tweens.add({
+        targets: text,
+        alpha: 1,
+        duration: 300,
+        delay: (player1Controls.length + player2Controls.length + index) * 30 + 400,
+        ease: 'Power2',
+      });
       currentY += 25;
     });
 

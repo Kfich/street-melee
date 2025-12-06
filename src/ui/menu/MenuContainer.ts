@@ -43,10 +43,10 @@ export class MenuContainer {
     });
     this.title.setOrigin(0.5);
 
-    // Create subtitle if provided
+    // Create subtitle if provided - adjusted for 8-bit font
     if (subtitle) {
       this.subtitle = scene.add.text(0, this.theme.spacing.titleMargin, subtitle, {
-        fontSize: '24px',
+        fontSize: '12px', // Reduced for 8-bit font readability
         fontFamily: this.theme.typography.itemFont,
         color: `#${this.theme.colors.textSecondary.toString(16).padStart(6, '0')}`,
       });

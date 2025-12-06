@@ -9,8 +9,8 @@ export class MenuToggle {
   private theme: MenuTheme;
   private container: Phaser.GameObjects.Container;
   private label: Phaser.GameObjects.Text;
-  private background: Phaser.GameObjects.Rectangle;
-  private toggle: Phaser.GameObjects.Rectangle;
+  private background: Phaser.GameObjects.Graphics;
+  private toggle: Phaser.GameObjects.Graphics;
   private toggleText: Phaser.GameObjects.Text;
   private value: boolean = false;
   private onChangeCallback?: (value: boolean) => void;
@@ -43,27 +43,40 @@ export class MenuToggle {
     });
     this.label.setOrigin(0, 0.5);
 
-    // Create background
-    this.background = scene.add.rectangle(100, 0, toggleWidth, toggleHeight, this.theme.colors.secondary);
-    this.background.setStrokeStyle(2, this.theme.colors.text);
+    const borderRadius = 8;
+    
+    // Create background - rounded
+    this.background = scene.add.graphics();
+    this.background.fillStyle(this.theme.colors.secondary, 1);
+    this.background.fillRoundedRect(100 - toggleWidth / 2, -toggleHeight / 2, toggleWidth, toggleHeight, borderRadius);
+    this.background.lineStyle(2, this.theme.colors.text, 1);
+    this.background.strokeRoundedRect(100 - toggleWidth / 2, -toggleHeight / 2, toggleWidth, toggleHeight, borderRadius);
 
-    // Create toggle switch
+    // Create toggle switch - rounded
     const toggleX = this.value ? 100 + toggleWidth / 4 : 100 - toggleWidth / 4;
-    this.toggle = scene.add.rectangle(toggleX, 0, toggleHeight - 8, toggleHeight - 8, this.theme.colors.accent);
-    this.toggle.setStrokeStyle(2, this.theme.colors.text);
+    const toggleSize = toggleHeight - 8;
+    this.toggle = scene.add.graphics();
+    this.toggle.fillStyle(this.theme.colors.accent, 1);
+    this.toggle.fillRoundedRect(toggleX - toggleSize / 2, -toggleSize / 2, toggleSize, toggleSize, toggleSize / 2);
+    this.toggle.lineStyle(2, this.theme.colors.text, 1);
+    this.toggle.strokeRoundedRect(toggleX - toggleSize / 2, -toggleSize / 2, toggleSize, toggleSize, toggleSize / 2);
 
-    // Create toggle text
+    // Create toggle text - adjusted for 8-bit font
     this.toggleText = scene.add.text(100, 0, this.value ? 'ON' : 'OFF', {
-      fontSize: '16px',
+      fontSize: '12px', // Reduced for 8-bit font
       fontFamily: this.theme.typography.labelFont,
       color: `#${this.theme.colors.text.toString(16).padStart(6, '0')}`,
       fontStyle: 'bold',
     });
     this.toggleText.setOrigin(0.5);
 
-    // Set up interactivity
-    this.background.setInteractive({ useHandCursor: true });
-    this.background.on('pointerdown', () => this.toggleValue());
+    // Set up interactivity - use container for hit area
+    const hitArea = new Phaser.Geom.Rectangle(100 - toggleWidth / 2, -toggleHeight / 2, toggleWidth, toggleHeight);
+    this.container.setInteractive(hitArea, Phaser.Geom.Rectangle.Contains);
+    if (this.container.input) {
+      this.container.input.cursor = 'pointer';
+    }
+    this.container.on('pointerdown', () => this.toggleValue());
 
     // Add to container
     this.container.add([this.label, this.background, this.toggle, this.toggleText]);
@@ -94,19 +107,34 @@ export class MenuToggle {
 
   private updateVisuals() {
     const toggleWidth = 80;
+    const toggleHeight = 40;
+    const borderRadius = 8;
+    const toggleSize = toggleHeight - 8;
     const targetX = this.value ? 100 + toggleWidth / 4 : 100 - toggleWidth / 4;
+    const bgColor = this.value ? this.theme.colors.accent : this.theme.colors.secondary;
 
-    // Animate toggle position
+    // Update background - redraw rounded rectangle
+    this.background.clear();
+    this.background.fillStyle(bgColor, 1);
+    this.background.fillRoundedRect(100 - toggleWidth / 2, -toggleHeight / 2, toggleWidth, toggleHeight, borderRadius);
+    this.background.lineStyle(2, this.theme.colors.text, 1);
+    this.background.strokeRoundedRect(100 - toggleWidth / 2, -toggleHeight / 2, toggleWidth, toggleHeight, borderRadius);
+
+    // Animate toggle position and redraw
     this.scene.tweens.add({
       targets: this.toggle,
       x: targetX,
       duration: 150,
       ease: 'Power2',
+      onUpdate: () => {
+        // Redraw toggle at new position
+        this.toggle.clear();
+        this.toggle.fillStyle(this.theme.colors.accent, 1);
+        this.toggle.fillRoundedRect(this.toggle.x - toggleSize / 2, -toggleSize / 2, toggleSize, toggleSize, toggleSize / 2);
+        this.toggle.lineStyle(2, this.theme.colors.text, 1);
+        this.toggle.strokeRoundedRect(this.toggle.x - toggleSize / 2, -toggleSize / 2, toggleSize, toggleSize, toggleSize / 2);
+      }
     });
-
-    // Update background color
-    const bgColor = this.value ? this.theme.colors.accent : this.theme.colors.secondary;
-    this.background.setFillStyle(bgColor);
 
     // Update text
     this.toggleText.setText(this.value ? 'ON' : 'OFF');

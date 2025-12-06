@@ -39,9 +39,9 @@ export class MainMenuScene extends BaseMenuScene {
     this.menuContainer.addButton('CONTROLS', () => this.showControls());
     this.menuContainer.addButton('QUIT', () => this.quit());
 
-    // Instructions - positioned at the very bottom with more margin
+    // Instructions - positioned at the very bottom with more margin, adjusted for 8-bit font
     this.add.text(width / 2, height - 30, 'Arrow Keys: Navigate | Enter: Select', {
-      fontSize: '14px',
+      fontSize: '10px', // Reduced for 8-bit font
       fontFamily: this.theme.typography.labelFont,
       color: `#${this.theme.colors.textSecondary.toString(16).padStart(6, '0')}`,
     }).setOrigin(0.5).setDepth(1001);

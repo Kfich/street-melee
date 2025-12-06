@@ -72,14 +72,14 @@ export const DEFAULT_MENU_THEME: MenuTheme = {
     disabled: 0x666666,
   },
   typography: {
-    titleFont: 'Arial',
-    titleSize: '72px',
-    titleStroke: 6,
-    itemFont: 'Arial',
-    itemSize: '36px',
+    titleFont: '"Press Start 2P", "Courier New", monospace',
+    titleSize: '48px', // Reduced for 8-bit font readability
+    titleStroke: 4,
+    itemFont: '"Press Start 2P", "Courier New", monospace',
+    itemSize: '20px', // Reduced for 8-bit font readability
     itemStroke: 2,
-    labelFont: 'Arial',
-    labelSize: '24px',
+    labelFont: '"Press Start 2P", "Courier New", monospace',
+    labelSize: '14px', // Reduced for 8-bit font readability
   },
   spacing: {
     titleMargin: 50,
@@ -96,7 +96,7 @@ export const DEFAULT_MENU_THEME: MenuTheme = {
   button: {
     width: 300,
     height: 60,
-    borderRadius: 8,
+    borderRadius: 12,
     strokeWidth: 2,
     strokeColor: 0xffffff,
   },

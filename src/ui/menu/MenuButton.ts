@@ -8,9 +8,9 @@ export class MenuButton {
   private scene: Phaser.Scene;
   private theme: MenuTheme;
   private container: Phaser.GameObjects.Container;
-  private background: Phaser.GameObjects.Rectangle;
+  private background: Phaser.GameObjects.Graphics;
   private text: Phaser.GameObjects.Text;
-  private glow: Phaser.GameObjects.Rectangle;
+  private glow: Phaser.GameObjects.Graphics;
   private isSelected: boolean = false;
   private isHovered: boolean = false;
   private onClickCallback?: () => void;
@@ -33,27 +33,36 @@ export class MenuButton {
     // Create container
     this.container = scene.add.container(x, y);
 
-    // Create glow effect (initially invisible)
-    this.glow = scene.add.rectangle(
-      0,
-      0,
+    // Create glow effect (initially invisible) - rounded
+    this.glow = scene.add.graphics();
+    this.glow.fillStyle(theme.colors.selected, 0);
+    this.glow.fillRoundedRect(
+      -(theme.button.width + 20) / 2,
+      -(theme.button.height + 20) / 2,
       theme.button.width + 20,
       theme.button.height + 20,
-      theme.colors.selected,
-      0
+      theme.button.borderRadius + 4
     );
     this.glow.setBlendMode(Phaser.BlendModes.ADD);
 
-    // Create background
-    this.background = scene.add.rectangle(
-      0,
-      0,
+    // Create background with rounded corners
+    this.background = scene.add.graphics();
+    this.background.fillStyle(theme.colors.primary, theme.colors.backgroundAlpha);
+    this.background.fillRoundedRect(
+      -theme.button.width / 2,
+      -theme.button.height / 2,
       theme.button.width,
       theme.button.height,
-      theme.colors.primary,
-      theme.colors.backgroundAlpha
+      theme.button.borderRadius
     );
-    this.background.setStrokeStyle(theme.button.strokeWidth, theme.button.strokeColor);
+    this.background.lineStyle(theme.button.strokeWidth, theme.button.strokeColor, 1);
+    this.background.strokeRoundedRect(
+      -theme.button.width / 2,
+      -theme.button.height / 2,
+      theme.button.width,
+      theme.button.height,
+      theme.button.borderRadius
+    );
 
     // Create text
     this.text = scene.add.text(0, 0, label, {
@@ -69,11 +78,20 @@ export class MenuButton {
     // Add to container
     this.container.add([this.glow, this.background, this.text]);
 
-    // Set up interactivity
-    this.background.setInteractive({ useHandCursor: true });
-    this.background.on('pointerdown', () => this.handleClick());
-    this.background.on('pointerover', () => this.handleHover());
-    this.background.on('pointerout', () => this.handleOut());
+    // Set up interactivity - use container for hit area
+    const hitArea = new Phaser.Geom.Rectangle(
+      -this.theme.button.width / 2,
+      -this.theme.button.height / 2,
+      this.theme.button.width,
+      this.theme.button.height
+    );
+    this.container.setInteractive(hitArea, Phaser.Geom.Rectangle.Contains);
+    if (this.container.input) {
+      this.container.input.cursor = 'pointer';
+    }
+    this.container.on('pointerdown', () => this.handleClick());
+    this.container.on('pointerover', () => this.handleHover());
+    this.container.on('pointerout', () => this.handleOut());
 
     // Set depth
     this.container.setDepth(1000);
@@ -137,8 +155,24 @@ export class MenuButton {
       ease: 'Power2',
     });
 
-    // Update colors
-    this.background.setFillStyle(color, this.theme.colors.backgroundAlpha);
+    // Update colors - redraw rounded rectangle
+    this.background.clear();
+    this.background.fillStyle(color, this.theme.colors.backgroundAlpha);
+    this.background.fillRoundedRect(
+      -this.theme.button.width / 2,
+      -this.theme.button.height / 2,
+      this.theme.button.width,
+      this.theme.button.height,
+      this.theme.button.borderRadius
+    );
+    this.background.lineStyle(this.theme.button.strokeWidth, this.theme.button.strokeColor, 1);
+    this.background.strokeRoundedRect(
+      -this.theme.button.width / 2,
+      -this.theme.button.height / 2,
+      this.theme.button.width,
+      this.theme.button.height,
+      this.theme.button.borderRadius
+    );
     this.text.setColor(`#${textColor.toString(16).padStart(6, '0')}`);
 
     // Update glow
@@ -158,9 +192,25 @@ export class MenuButton {
   }
 
   setEnabled(enabled: boolean) {
-    this.background.setInteractive(enabled ? { useHandCursor: true } : undefined);
     if (!enabled) {
-      this.background.setFillStyle(this.theme.colors.disabled, this.theme.colors.backgroundAlpha);
+      // Redraw with disabled color
+      this.background.clear();
+      this.background.fillStyle(this.theme.colors.disabled, this.theme.colors.backgroundAlpha);
+      this.background.fillRoundedRect(
+        -this.theme.button.width / 2,
+        -this.theme.button.height / 2,
+        this.theme.button.width,
+        this.theme.button.height,
+        this.theme.button.borderRadius
+      );
+      this.background.lineStyle(this.theme.button.strokeWidth, this.theme.button.strokeColor, 1);
+      this.background.strokeRoundedRect(
+        -this.theme.button.width / 2,
+        -this.theme.button.height / 2,
+        this.theme.button.width,
+        this.theme.button.height,
+        this.theme.button.borderRadius
+      );
       this.text.setColor(`#${this.theme.colors.disabled.toString(16).padStart(6, '0')}`);
     } else {
       this.updateVisualState();
@@ -186,5 +236,6 @@ export class MenuButton {
   getY(): number {
     return this.container.y;
   }
+
 }
 
