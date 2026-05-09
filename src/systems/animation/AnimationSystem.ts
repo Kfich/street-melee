@@ -30,43 +30,80 @@ export class AnimationSystem {
     const direction = facingRight ? 'right' : 'left';
     let animKey: string | null = null;
 
-    // Determine animation key based on state and character type
+    // Determine animation key based on state and character type.
+    // For each state we first try a dedicated animation; if it doesn't exist we
+    // fall through to the best available substitute so the system never shows a
+    // stale/wrong frame.
     switch (state) {
       case 'idle':
         animKey = `${characterType}_idle_${direction}`;
         break;
+
       case 'walking':
         animKey = `${characterType}_walk_${direction}`;
         break;
+
       case 'jumping':
-        animKey = `${characterType}_jump_${direction}`;
+        // Try dedicated jump animation, fall back to walk then idle
+        animKey = this.scene.anims.exists(`${characterType}_jump_${direction}`)
+          ? `${characterType}_jump_${direction}`
+          : (this.scene.anims.exists(`${characterType}_walk_${direction}`)
+              ? `${characterType}_walk_${direction}`
+              : `${characterType}_idle_${direction}`);
         break;
+
       case 'landing':
-        // Use idle animation for landing (can be extended with landing animation later)
-        animKey = `${characterType}_idle_${direction}`;
+        // Try a dedicated landing anim; walk conveys momentum better than idle
+        animKey = this.scene.anims.exists(`${characterType}_landing_${direction}`)
+          ? `${characterType}_landing_${direction}`
+          : (this.scene.anims.exists(`${characterType}_walk_${direction}`)
+              ? `${characterType}_walk_${direction}`
+              : `${characterType}_idle_${direction}`);
         break;
+
       case 'attacking':
-        // Check if this is a jump attack or special move
-        // This will be handled by the character class based on context
         animKey = `${characterType}_attack_${direction}`;
         break;
-      case 'grabbed':
+
       case 'grabbing':
-        // Use idle animation for grabbing
-        animKey = `${characterType}_idle_${direction}`;
+        // Prefer a dedicated grab animation, fall back to attack then idle
+        animKey = this.scene.anims.exists(`${characterType}_grab_${direction}`)
+          ? `${characterType}_grab_${direction}`
+          : (this.scene.anims.exists(`${characterType}_attack_${direction}`)
+              ? `${characterType}_attack_${direction}`
+              : `${characterType}_idle_${direction}`);
         break;
+
+      case 'grabbed':
+        // Prefer grabbed/grabbed-idle, fall back to idle
+        animKey = this.scene.anims.exists(`${characterType}_grabbed_${direction}`)
+          ? `${characterType}_grabbed_${direction}`
+          : `${characterType}_idle_${direction}`;
+        break;
+
       case 'throwing':
-        // Use attack animation for throwing
-        animKey = `${characterType}_attack_${direction}`;
+        // Throwing looks like an attack
+        animKey = this.scene.anims.exists(`${characterType}_throw_${direction}`)
+          ? `${characterType}_throw_${direction}`
+          : `${characterType}_attack_${direction}`;
         break;
+
       case 'knockedDown':
-        // Use idle animation for knocked down (can be extended with knockdown animation later)
-        animKey = `${characterType}_idle_${direction}`;
+      case 'dying':
+        // Prefer a dedicated knockdown anim; the tween sequence handles the
+        // physical collapse so we just want to freeze on a neutral frame.
+        animKey = this.scene.anims.exists(`${characterType}_knockdown_${direction}`)
+          ? `${characterType}_knockdown_${direction}`
+          : `${characterType}_idle_${direction}`;
         break;
+
       case 'hitReaction':
-        // Use idle animation for hit reaction (can be extended with flinch animation later)
-        animKey = `${characterType}_idle_${direction}`;
+        // Brief flinch — prefer a dedicated hurt anim if available
+        animKey = this.scene.anims.exists(`${characterType}_hurt_${direction}`)
+          ? `${characterType}_hurt_${direction}`
+          : `${characterType}_idle_${direction}`;
         break;
+
       default:
         animKey = `${characterType}_idle_${direction}`;
     }

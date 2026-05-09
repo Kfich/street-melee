@@ -109,7 +109,7 @@ export class Weapon extends BaseEntity {
       this.sprite.setTexture('weapon');
       this.sprite.setTint(this.stats.color);
       this.sprite.setDisplaySize(displayWidth, displayHeight);
-      
+
       const body = this.sprite.body as Phaser.Physics.Arcade.Body;
       if (body) {
         body.setSize(displayWidth * 0.8, displayHeight * 0.9);

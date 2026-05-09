@@ -186,6 +186,10 @@ export class Enemy extends BaseEntity {
   }
 
   update(): void {
+    // Skip all logic during the death-sequence so the EnemyManager's tweens
+    // can run without the AI fighting them.
+    if (this.state === 'dying') return;
+
     this.checkGrounded();
     this.updateAI();
     this.updateState();
@@ -224,12 +228,15 @@ export class Enemy extends BaseEntity {
       return;
     }
 
+    // Death / knockdown states are handled by tween sequences — don't override
+    const state = this.getState();
+    if (state === 'dying' || state === 'knockedDown') return;
+
     const facingRight = this.isFacingRight();
     const direction = facingRight ? 'right' : 'left';
-    const state = this.getState();
-    
+
     let animKey: string | null = null;
-    
+
     // Determine animation based on state
     switch (state) {
       case 'idle':
@@ -240,6 +247,10 @@ export class Enemy extends BaseEntity {
         break;
       case 'attacking':
         animKey = `enemy_${this.enemyType}_attack_${direction}`;
+        break;
+      case 'hitReaction':
+        // Brief hit-reaction: play idle but tint is applied externally
+        animKey = `enemy_${this.enemyType}_idle_${direction}`;
         break;
       default:
         animKey = `enemy_${this.enemyType}_idle_${direction}`;
@@ -386,7 +397,7 @@ export class Enemy extends BaseEntity {
         player.sprite.x,
         player.sprite.y
       );
-      
+
       if (distance < nearestDistance) {
         nearestDistance = distance;
         nearestPlayer = player;

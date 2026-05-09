@@ -217,57 +217,16 @@ export class StoryManager {
     
     console.log('[StoryManager] Displaying dialogue text:', text.substring(0, 50) + (text.length > 50 ? '...' : ''));
 
-    // Create dialogue box (this creates the text element)
+    // Create dialogue box — synchronously sets this.dialogueText
     this.createDialogueBox(entry, text);
 
-    // Set text immediately after box creation
-    // Use a small delay to ensure the element is fully in the display list
-    // But also set it synchronously as a fallback
-    if (this.dialogueText) {
-      // Set initial empty text to ensure texture is initialized
-      this.dialogueText.setText('');
-      this.dialogueText.setVisible(true);
-      this.dialogueText.setActive(true);
-    }
+    if (!this.dialogueText) return;
 
-    // Set text immediately (don't wait for delay)
-    if (this.dialogueText) {
-      // Ensure text element is visible and active
-      this.dialogueText.setVisible(true);
-      this.dialogueText.setActive(true);
-      
-      // Handle typewriter effect
-      if (entry.typewriter_speed && entry.typewriter_speed > 0) {
-        const speed = entry.typewriter_speed ?? 0.015;
-        // Start typewriter immediately
-        this.scene.time.delayedCall(50, () => {
-          if (this.dialogueText) {
-            this.startTypewriter(text, speed);
-          }
-        });
-      } else {
-        // Set text directly immediately
-        this.dialogueText.setText(text);
-        this.dialogueText.setVisible(true);
-        this.dialogueText.setActive(true);
-      }
+    // Start typewriter or set text directly
+    if (entry.typewriter_speed && entry.typewriter_speed > 0) {
+      this.startTypewriter(text, entry.typewriter_speed);
     } else {
-      console.error('[StoryManager] dialogueText is null when trying to set text!');
-      // Retry after a short delay
-      this.scene.time.delayedCall(100, () => {
-        if (!this.dialogueText) {
-          console.error('[StoryManager] dialogueText is still null after retry!');
-          return;
-        }
-        this.dialogueText.setVisible(true);
-        this.dialogueText.setActive(true);
-        if (entry.typewriter_speed && entry.typewriter_speed > 0) {
-          const speed = entry.typewriter_speed ?? 0.015;
-          this.startTypewriter(text, speed);
-        } else {
-          this.dialogueText.setText(text);
-        }
-      });
+      this.dialogueText.setText(text);
     }
 
     // Auto-advance if enabled
@@ -356,10 +315,6 @@ export class StoryManager {
       lineSpacing: 4,
     });
     this.dialogueText.setDepth(10002);
-    this.dialogueText.setVisible(true);
-    this.dialogueText.setActive(true);
-    // Ensure text is on top
-    this.scene.children.bringToTop(this.dialogueText);
     this.cutsceneContainer.add(this.dialogueText);
 
     // Add prompt text for manual advance
@@ -383,49 +338,35 @@ export class StoryManager {
    * Start typewriter effect
    */
   private startTypewriter(fullText: string, speed: number): void {
-    if (!this.dialogueText) {
-      console.error('[StoryManager] Cannot start typewriter - dialogueText is null');
-      return;
-    }
+    if (!this.dialogueText) return;
 
-    // Show first character immediately for better UX
-    if (fullText.length > 0) {
-      this.dialogueText.setText(fullText.substring(0, 1));
-      this.dialogueText.setVisible(true);
-      this.dialogueText.setActive(true);
-    }
+    if (fullText.length === 0) return;
 
-    let currentIndex = 1; // Start from second character since we showed first one
-    if (fullText.length <= 1) {
-      // If text is only one character, we're done
-      return;
-    }
+    // Show first character immediately
+    this.dialogueText.setText(fullText.substring(0, 1));
 
-    // Calculate delay in milliseconds
+    if (fullText.length === 1) return;
+
+    let currentIndex = 1;
     const delayMs = speed * 1000;
 
     this.typewriterTimer = this.scene.time.addEvent({
       delay: delayMs,
       callback: () => {
+        // dialogueText can legitimately be null if clearDialogue() was called
+        // while the timer was still queued — just stop cleanly
         if (!this.dialogueText) {
-          console.error('[StoryManager] dialogueText became null during typewriter!');
-          if (this.typewriterTimer) {
-            this.typewriterTimer.destroy();
-          }
+          this.typewriterTimer?.destroy();
+          this.typewriterTimer = undefined;
           return;
         }
-        
+
         if (currentIndex < fullText.length) {
-          const displayText = fullText.substring(0, currentIndex + 1);
-          this.dialogueText.setText(displayText);
-          this.dialogueText.setVisible(true);
-          this.dialogueText.setActive(true);
+          this.dialogueText.setText(fullText.substring(0, currentIndex + 1));
           currentIndex++;
         } else {
-          if (this.typewriterTimer) {
-            this.typewriterTimer.destroy();
-            this.typewriterTimer = undefined;
-          }
+          this.typewriterTimer?.destroy();
+          this.typewriterTimer = undefined;
         }
       },
       repeat: fullText.length,

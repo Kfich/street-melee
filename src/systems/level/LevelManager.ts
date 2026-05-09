@@ -68,6 +68,7 @@ export class LevelManager {
   private waveEnemies: Map<number, Set<string>> = new Map(); // Track enemies per wave by their sprite ID
   private completedWaves: Set<number> = new Set();
   private spawnedEnemies: Set<string> = new Set(); // Track all spawned enemy IDs
+  private totalEnemiesSpawnedCount: number = 0; // Monotonically increasing spawn counter
 
   constructor(scene: Phaser.Scene, levelData: LevelData) {
     this.scene = scene;
@@ -159,7 +160,8 @@ export class LevelManager {
           enemy.sprite.setData('waveNumber', spawnPoint.wave || 0);
           
           this.spawnedEnemies.add(enemyId);
-          
+          this.totalEnemiesSpawnedCount++;
+
           // If spawned from a wave spawn point, track it
           if (spawnPoint.wave !== undefined && spawnPoint.wave > 0) {
             const waveEnemySet = this.waveEnemies.get(spawnPoint.wave);
@@ -349,6 +351,7 @@ export class LevelManager {
         enemyEntity.sprite.setData('waveNumber', wave.waveNumber);
         
         this.spawnedEnemies.add(enemyId);
+        this.totalEnemiesSpawnedCount++;
         const waveEnemySet = this.waveEnemies.get(wave.waveNumber);
         if (waveEnemySet) {
           waveEnemySet.add(enemyId);
@@ -443,10 +446,19 @@ export class LevelManager {
   }
 
   /**
-   * Get remaining enemies count
+   * Get remaining enemies count (alive + in death-sequence)
    */
   getRemainingEnemiesCount(): number {
     return this.spawnedEnemies.size;
+  }
+
+  /**
+   * Get total enemies spawned since level start (monotonically increasing).
+   * Used by GameScene to know whether spawning has begun before testing for
+   * level completion.
+   */
+  getTotalEnemiesSpawned(): number {
+    return this.totalEnemiesSpawnedCount;
   }
 
   /**

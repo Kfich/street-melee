@@ -94,6 +94,11 @@ export const SOUND_EFFECTS: Record<string, SoundEffectConfig> = {
     path: 'assets/sounds/8-bit-item-collect.mp3',
     volume: 0.7
   },
+  healthRestore: {
+    key: 'healthRestore',
+    path: 'assets/sounds/8-bit-item-collect.mp3', // Shares the item collect asset
+    volume: 0.8
+  },
   levelUp: {
     key: 'levelUp',
     path: 'assets/sounds/8-bit-level-up.mp3',
@@ -110,6 +115,21 @@ export const SOUND_EFFECTS: Record<string, SoundEffectConfig> = {
     key: 'menuSelect',
     path: 'assets/sounds/8-bit-menu-item-select.mp3',
     volume: 0.6
+  },
+  menuBack: {
+    key: 'menuBack',
+    path: 'assets/sounds/8-bit-menu-item-select.mp3', // Reuse select for now
+    volume: 0.5
+  },
+  menuAdvance: {
+    key: 'menuAdvance',
+    path: 'assets/sounds/8-bit-menu-item-select.mp3',
+    volume: 0.6
+  },
+  menuError: {
+    key: 'menuError',
+    path: 'assets/sounds/8-bit-menu-item-select.mp3',
+    volume: 0.4
   },
   gameOver: {
     key: 'gameOver',

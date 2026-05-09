@@ -185,11 +185,15 @@ export abstract class BaseEntity {
       this.sprite.setVisible(true);
       this.sprite.clearTint();
       this.sprite.setAlpha(1);
-      
+      this.sprite.setAngle(0); // Clear any death/knockdown rotation
+      // Clear transient data attached during gameplay
+      delete (this.sprite as any)._knockdownScaleX;
+      delete (this.sprite as any)._knockdownScaleY;
+
       if (x !== undefined && y !== undefined) {
         this.sprite.setPosition(x, y);
       }
-      
+
       const body = this.sprite.body as Phaser.Physics.Arcade.Body;
       if (body) {
         body.setVelocity(0, 0);

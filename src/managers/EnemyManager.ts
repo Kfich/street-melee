@@ -58,50 +58,146 @@ export class EnemyManager {
   }
 
   /**
-   * Handle enemy spawned event
+   * Handle enemy spawned event — plays a brief entry flash so enemies don't
+   * just pop into existence.
    */
   private handleEnemySpawned(enemy: Enemy): void {
     this.enemies.push(enemy);
     this.entityManager.add(enemy);
     enemy.sprite.setData('entity', enemy);
     enemy.sprite.setData('isEnemy', true);
-    
-    // Set depth based on Y position for proper layering
+
+    // Depth from Y for proper layering
     enemy.sprite.setDepth(enemy.sprite.y);
-    
-    // Set up ground collision
+
+    // Ground collision
     this.scene.physics.add.collider(enemy.sprite, this.ground);
+
+    // --- Spawn entry effect ---
+    // Capture the final scale set by setupEnemy/configureEnemySpriteDisplay
+    const targetScaleX = enemy.sprite.scaleX;
+    const targetScaleY = enemy.sprite.scaleY;
+
+    // Start compressed + invisible with an orange flash tint
+    enemy.sprite.setAlpha(0);
+    enemy.sprite.setScale(targetScaleX * 1.3, targetScaleY * 0.4);
+    enemy.sprite.setTint(0xff8800);
+
+    this.scene.tweens.add({
+      targets: enemy.sprite,
+      alpha: 1,
+      scaleX: targetScaleX,
+      scaleY: targetScaleY,
+      duration: 220,
+      ease: 'Back.easeOut',
+      onComplete: () => {
+        if (enemy.sprite && enemy.sprite.active) {
+          enemy.sprite.clearTint();
+        }
+      }
+    });
   }
 
   /**
-   * Handle enemy defeated event
+   * Handle enemy defeated event — runs a multi-phase death sequence before
+   * releasing the enemy back to the pool.
+   *
+   * Phase 1 (0–300 ms)  : rapid red/white strobe (4 flashes × 75 ms)
+   * Phase 2 (300–550 ms): collapse tween — rotate 90°, squish to flat
+   * Phase 3 (550–850 ms): fade out alpha to 0
+   * Phase 4            : release to pool / destroy
    */
   private handleEnemyDefeated(enemy: Enemy): void {
+    if (!enemy || !enemy.sprite || !enemy.sprite.active) return;
+
+    // Mark as dying so the enemy's own update() is skipped
+    enemy.setState('dying');
+
+    // Immediately detach from EntityManager so AI targets move on and
+    // the entity is excluded from combat checks — but sprite stays alive.
+    this.entityManager.detach(enemy);
+
+    // Remove from our local tracking array
+    const enemyIndex = this.enemies.findIndex(e => e === enemy);
+    if (enemyIndex > -1) {
+      this.enemies.splice(enemyIndex, 1);
+    }
+
+    // Shadow cleanup right away
+    this.cleanupEnemyShadow(enemy);
+
+    // Notify level manager (wave tracking)
     const enemyId = enemy.sprite.getData('enemyId');
     const waveNumber = enemy.sprite.getData('waveNumber');
-    
-    // Notify level manager
     if (this.levelManager && enemyId) {
       this.levelManager.onEnemyDefeated(enemyId, waveNumber);
     }
-    
-    // Remove enemy from array
-    const enemyIndex = this.enemies.findIndex(e => e === enemy);
-    if (enemyIndex > -1) {
-      // Clean up enemy shadow
-      this.cleanupEnemyShadow(enemy);
-      
-      // Release to pool if available, otherwise destroy
-      const enemyPool = (this.scene as any).enemyPool;
-      if (enemyPool) {
-        enemyPool.release(enemy);
-      } else if (enemy && enemy.sprite) {
-        enemy.sprite.destroy();
-      }
-      
-      // Remove from array
-      this.enemies.splice(enemyIndex, 1);
+
+    // Stop physics movement
+    const body = enemy.sprite.body as Phaser.Physics.Arcade.Body;
+    if (body) {
+      body.setVelocity(0, 0);
+      body.setGravityY(0);
     }
+
+    // --- Phase 1: strobe flash ---
+    let flashCount = 0;
+    const flashTimer = this.scene.time.addEvent({
+      delay: 75,
+      repeat: 7, // 4 on + 4 off cycles
+      callback: () => {
+        if (!enemy.sprite || !enemy.sprite.active) {
+          flashTimer.destroy();
+          return;
+        }
+        if (flashCount % 2 === 0) {
+          enemy.sprite.setTint(0xff2222);
+        } else {
+          enemy.sprite.clearTint();
+        }
+        flashCount++;
+      }
+    });
+
+    // --- Phase 2: collapse (starts after strobe) ---
+    this.scene.time.delayedCall(300, () => {
+      if (!enemy.sprite || !enemy.sprite.active) return;
+      enemy.sprite.clearTint();
+
+      const sx = enemy.sprite.scaleX;
+      const sy = enemy.sprite.scaleY;
+
+      this.scene.tweens.add({
+        targets: enemy.sprite,
+        angle: enemy.sprite.flipX ? -90 : 90,
+        scaleX: sx * 1.4,
+        scaleY: sy * 0.25,
+        duration: 220,
+        ease: 'Power3.easeIn',
+
+        // --- Phase 3: fade out ---
+        onComplete: () => {
+          if (!enemy.sprite || !enemy.sprite.active) return;
+
+          this.scene.tweens.add({
+            targets: enemy.sprite,
+            alpha: 0,
+            duration: 280,
+            ease: 'Power2',
+
+            // --- Phase 4: pool / destroy ---
+            onComplete: () => {
+              const enemyPool = (this.scene as any).enemyPool;
+              if (enemyPool) {
+                enemyPool.release(enemy);
+              } else if (enemy.sprite) {
+                enemy.sprite.destroy();
+              }
+            }
+          });
+        }
+      });
+    });
   }
 
   /**

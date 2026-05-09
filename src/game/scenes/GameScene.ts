@@ -330,7 +330,7 @@ export class GameScene extends Phaser.Scene {
           this.isMultiplayer
         );
       }
-      
+
       // Set up in-game menu button callbacks
       if (this.widgetManager) {
         // Menu button - show main menu
@@ -396,7 +396,7 @@ export class GameScene extends Phaser.Scene {
           this.scene.start('MainMenuScene');
         });
       }
-      
+
       console.log('[GameScene] Widget manager initialized and widgets visible');
     });
 
@@ -666,7 +666,7 @@ export class GameScene extends Phaser.Scene {
       // Trigger level completion (boss defeat = level complete)
       this.events.emit('levelCompleted', {
         levelId: `level${this.levelManager.getCurrentLevel()}`,
-        score: 0 // TODO: Calculate actual score
+        score: this.playerScore
       });
     });
 
@@ -816,13 +816,9 @@ export class GameScene extends Phaser.Scene {
     // Create shadows for players and enemies
     this.createShadows();
 
-    // Listen for score/lives updates - widgets handle display
-    this.events.on('scoreUpdated', (score: number) => {
-      // Update widget score
-      if (this.widgetManager) {
-        this.widgetManager.setScore(score);
-      }
-    });
+    // scoreUpdated is emitted by ItemManager and calculateDefeatScore —
+    // widget updates are handled directly in each code path via addScore/setScore,
+    // so no central listener is needed here.
 
     this.events.on('livesUpdated', (lives: number) => {
       // Update widget lives
@@ -848,6 +844,7 @@ export class GameScene extends Phaser.Scene {
       // Update widgets (with null check)
       if (this.widgetManager) {
         if (data.points) {
+          this.playerScore += data.points;
           this.widgetManager.addScore(data.points);
         }
         this.widgetManager.incrementPickup();
@@ -956,38 +953,86 @@ export class GameScene extends Phaser.Scene {
   }
 
   private setupCombatEffects() {
-    // Listen for special move events
+    // ── Special / signature moves ─────────────────────────────────────────────
     this.events.on('specialMovePerformed', (data: { x: number; y: number; characterType: string }) => {
       this.visualEffects.createSpecialMoveFlash(data.x, data.y, data.characterType);
+
+      // Character-specific flash colours
+      const colors: Record<string, number> = {
+        axel: 0x00ff00, blaze: 0xff00ff, max: 0x0088ff, sammy: 0xffff00,
+        dario: 0xff6600, zara: 0xff00ff, rex: 0x00ffff, angela: 0xff0088
+      };
+      const color = colors[data.characterType] ?? 0x00ffff;
+      if (data.x && data.y) {
+        this.visualEffects.flashSpecialMove(data.x, data.y, color);
+        this.visualEffects.createSpecialMoveExplosion(data.x, data.y, color, 'medium');
+        this.visualEffects.screenShakeMedium(250);
+      } else {
+        this.visualEffects.flashScreen(0x00ffff, 80, 0.3);
+        this.visualEffects.screenShakeMedium(200);
+      }
     });
 
-    // Listen for landing events
+    this.events.on('signatureMovePerformed', () => {
+      this.visualEffects.flashScreen(0xffff00, 100, 0.4);
+      this.visualEffects.screenShakeHeavy(250);
+    });
+
+    // ── Landing ───────────────────────────────────────────────────────────────
     this.events.on('characterLanded', (data: { x: number; y: number; characterType: string; playerIndex: number }) => {
-      // Determine landing intensity based on character type or fall speed
-      // For now, use medium intensity - could be enhanced to track fall velocity
       this.visualEffects.createLandingEffect(data.x, data.y, 'medium');
     });
 
-    // Listen for hit reaction events
+    this.events.on('landingPerformed', (data: { x: number; y: number }) => {
+      if (data?.x && data?.y) {
+        this.visualEffects.createLandingDust(data.x, data.y);
+      }
+    });
+
+    // ── Hit reactions / damage ────────────────────────────────────────────────
     this.events.on('entityHitReaction', (data: { entity: any; damage: number; x: number; y: number }) => {
-      // Additional visual effects for hit reactions
       if (data.damage >= 20) {
-        // Heavy hit - more dramatic effect
         this.visualEffects.screenShakeLight(100);
       }
     });
 
-    // Listen for knockdown events
+    // ── Knockdown ─────────────────────────────────────────────────────────────
     this.events.on('entityKnockedDown', (data: { entity: any; x: number; y: number }) => {
-      // Impact effect for knockdown
       this.visualEffects.createLandingEffect(data.x, data.y, 'heavy');
       this.visualEffects.screenShakeMedium(200);
     });
 
-    // Listen for get-up events
+    this.events.on('knockdown', (data?: { x?: number; y?: number }) => {
+      if (data?.x && data?.y) {
+        this.visualEffects.createImpactEffect(data.x, data.y, true);
+        this.visualEffects.createDust(data.x, data.y, 10);
+      }
+      this.visualEffects.screenShakeHeavy(300);
+    });
+
+    // ── Get-up ────────────────────────────────────────────────────────────────
     this.events.on('entityGotUp', (data: { entity: any; x: number; y: number }) => {
-      // Subtle effect when getting up
       this.visualEffects.createSmoke(data.x, data.y);
+    });
+
+    this.events.on('getUpPerformed', (data?: { x?: number; y?: number }) => {
+      if (data?.x && data?.y) {
+        this.visualEffects.createDust(data.x, data.y, 4);
+      }
+    });
+
+    // ── Throw ─────────────────────────────────────────────────────────────────
+    this.events.on('throwPerformed', (data?: { x?: number; y?: number; isSlam?: boolean }) => {
+      if (data?.x && data?.y) {
+        if (data.isSlam) {
+          this.visualEffects.createImpactEffect(data.x, data.y, true);
+          this.visualEffects.createDust(data.x, data.y, 12);
+          this.visualEffects.screenShakeExtreme(400);
+        } else {
+          this.visualEffects.createDust(data.x, data.y, 6);
+          this.visualEffects.screenShakeMedium(200);
+        }
+      }
     });
 
     // Listen for weapon swing events
@@ -1114,170 +1159,119 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Trigger hit reaction animation on entity
+   * Trigger a per-entity hit-reaction: brief tint flash + flinch tween.
+   * Global effect listeners (special move, knockdown, throw, etc.) are
+   * registered ONCE in setupCombatEffects — NOT here — to avoid listener
+   * accumulation on every hit.
    */
   private triggerHitReaction(entity: BaseEntity, isHeavy: boolean, isKnockdown: boolean) {
-    if (isKnockdown) {
-      // Knockdown handled separately
-      return;
-    }
+    if (isKnockdown) return; // knockdown handled by entityKnockedDown path
 
-    // Set hit reaction state
     const currentState = entity.getState();
-    if (currentState !== 'attacking' && currentState !== 'knockedDown') {
-      entity.setState('hitReaction');
-      
-      // Flash effect
-      const sprite = entity.sprite;
-      sprite.setTint(0xff0000);
-      
-      // Brief stun/flinch animation
-      const duration = isHeavy ? GameConfig.HIT_STUN_DURATION : GameConfig.HIT_REACTION_DURATION;
-      
-      this.tweens.add({
-        targets: sprite,
-        alpha: 0.6,
-        duration: 50,
-        yoyo: true,
-        onComplete: () => {
-          sprite.clearTint();
-          sprite.setAlpha(1);
-          
-          // Return to previous state after reaction
-          this.time.delayedCall(duration, () => {
-            if (entity.getState() === 'hitReaction') {
-              entity.setState('idle');
-            }
-          });
-        }
-      });
+    if (currentState === 'attacking' || currentState === 'knockedDown' || currentState === 'dying') {
+      return; // Don't interrupt important states
     }
 
-    // Special move flash effects
-    this.events.on('specialMovePerformed', (data?: { x?: number; y?: number; characterType?: string }) => {
-      if (data?.x && data?.y) {
-        // Character-specific flash colors
-        const colors: Record<string, number> = {
-          'axel': 0x00ff00,    // Green
-          'blaze': 0xff00ff,   // Magenta
-          'max': 0x0088ff,     // Blue
-          'sammy': 0xffff00,   // Yellow
-          'dario': 0xff6600,   // Orange
-          'zara': 0xff00ff,    // Pink
-          'rex': 0x00ffff,     // Cyan
-          'angela': 0xff0088   // Pink
-        };
-        const color = colors[data.characterType || ''] || 0x00ffff;
-        this.visualEffects.flashSpecialMove(data.x, data.y, color);
-        // Create explosion effect for special moves
-        this.visualEffects.createSpecialMoveExplosion(data.x, data.y, color, 'medium');
-        this.visualEffects.screenShakeMedium(250);
-      } else {
-        // Full screen flash for special moves
-        this.visualEffects.flashScreen(0x00ffff, 80, 0.3);
-        this.visualEffects.screenShakeMedium(200);
-      }
-    });
+    entity.setState('hitReaction');
 
-    // Signature move effects
-    this.events.on('signatureMovePerformed', () => {
-      this.visualEffects.flashScreen(0xffff00, 100, 0.4);
-      this.visualEffects.screenShakeHeavy(250);
-    });
+    const sprite = entity.sprite;
+    const tintColor = isHeavy ? 0xff2222 : 0xff8888;
+    sprite.setTint(tintColor);
 
-    // Knockdown effects
-    this.events.on('knockdown', (data?: { x?: number; y?: number }) => {
-      if (data?.x && data?.y) {
-        this.visualEffects.createImpactEffect(data.x, data.y, true);
-        this.visualEffects.createDust(data.x, data.y, 10);
-      }
-      this.visualEffects.screenShakeHeavy(300);
-    });
+    const duration = isHeavy ? GameConfig.HIT_STUN_DURATION : GameConfig.HIT_REACTION_DURATION;
 
-    // Throw effects
-    this.events.on('throwPerformed', (data?: { x?: number; y?: number; isSlam?: boolean }) => {
-      if (data?.x && data?.y) {
-        if (data.isSlam) {
-          this.visualEffects.createImpactEffect(data.x, data.y, true);
-          this.visualEffects.createDust(data.x, data.y, 12);
-          this.visualEffects.screenShakeExtreme(400);
-        } else {
-          this.visualEffects.createDust(data.x, data.y, 6);
-          this.visualEffects.screenShakeMedium(200);
-        }
-      }
-    });
-
-    // Landing effects
-    this.events.on('landingPerformed', (data?: { x?: number; y?: number }) => {
-      if (data?.x && data?.y) {
-        this.visualEffects.createLandingDust(data.x, data.y);
-      }
-    });
-
-    // Get-up effects
-    this.events.on('getUpPerformed', (data?: { x?: number; y?: number }) => {
-      if (data?.x && data?.y) {
-        this.visualEffects.createDust(data.x, data.y, 4);
+    // Flinch scale squish
+    const sx = sprite.scaleX;
+    const sy = sprite.scaleY;
+    this.tweens.add({
+      targets: sprite,
+      scaleX: sx * (isHeavy ? 1.25 : 1.1),
+      scaleY: sy * (isHeavy ? 0.75 : 0.9),
+      alpha: 0.7,
+      duration: 50,
+      yoyo: true,
+      ease: 'Power2',
+      onComplete: () => {
+        if (!sprite || !sprite.active) return;
+        sprite.clearTint();
+        sprite.setAlpha(1);
+        sprite.setScale(sx, sy);
+        this.time.delayedCall(duration, () => {
+          if (entity.getState() === 'hitReaction') {
+            entity.setState('idle');
+          }
+        });
       }
     });
   }
 
   private setupAudioEvents() {
-    // Play sounds for various game events
-    this.events.on('attackPerformed', () => {
-      this.audioManager.playSound('punch');
-    });
-
-    this.events.on('specialMovePerformed', () => {
-      this.audioManager.playSound('special');
-      // Visual effects are handled in setupCombatEffects
-    });
-
+    // ── Movement ──────────────────────────────────────────────────────────────
     this.events.on('jumpPerformed', () => {
       this.audioManager.playSound('jump');
     });
 
+    // ── Combat actions ────────────────────────────────────────────────────────
+    // NOTE: We intentionally do NOT play a sound on 'attackPerformed'; the
+    // impact sound is played in 'entityDamaged' so it is frame-accurate to
+    // when the hit actually lands (avoids double-playing punch + hit).
+
     this.events.on('grabPerformed', () => {
-      this.audioManager.playSound('grab');
+      this.audioManager.playSound('grab', 0.8);
     });
 
     this.events.on('throwPerformed', () => {
-      this.audioManager.playSound('throw');
+      this.audioManager.playSound('throw', 0.9);
     });
 
     this.events.on('weaponHit', () => {
-      this.audioManager.playSound('weaponHit', 0.8);
+      this.audioManager.playSound('weaponHit', 0.85);
     });
 
+    // Weapon swing whoosh (lighter than impact)
     this.events.on('weaponSwing', () => {
-      // Play weapon swing sound (whoosh)
-      this.audioManager.playSound('weaponHit', 0.5); // Reuse weaponHit for now
+      this.audioManager.playSound('weaponHit', 0.4);
     });
 
+    // ── Damage / hit feedback ─────────────────────────────────────────────────
+    // Primary impact sound — plays once when a hit connects.
     this.events.on('entityDamaged', (data: { damage: number; isHeavy?: boolean }) => {
-      // Play impact sound based on damage
-      if (data.isHeavy || data.damage >= 25) {
-        this.audioManager.playSound('punch', 1.0); // Heavy hit
+      const isHeavy = data.isHeavy || data.damage >= 25;
+      if (isHeavy) {
+        this.audioManager.playSound('punch', 1.0);  // Heavy thud
       } else {
-        this.audioManager.playSound('punch', 0.6); // Light hit
+        this.audioManager.playSound('hit', 0.65);   // Light hit
       }
     });
 
-    this.events.on('entityHitReaction', () => {
-      // Subtle hit reaction sound
-      this.audioManager.playSound('punch', 0.4);
-    });
-
+    // Knockdown — distinct thud sound
     this.events.on('entityKnockedDown', () => {
-      // Heavy impact sound for knockdown
-      this.audioManager.playSound('throw', 1.0);
+      this.audioManager.playSound('knockdown', 1.0);
     });
 
+    // Enemy defeated — a final knockout thud (slightly louder, pitch not
+    // adjustable without asset work so we just use the knockdown clip).
+    this.events.on('entityDefeated', () => {
+      this.audioManager.playSound('knockdown', 1.1);
+    });
+
+    // ── Special moves ─────────────────────────────────────────────────────────
+    this.events.on('specialMovePerformed', () => {
+      this.audioManager.playSound('special');
+    });
+
+    this.events.on('jumpAttackPerformed', () => {
+      this.audioManager.playSound('special', 0.75);
+    });
+
+    this.events.on('backAttackPerformed', () => {
+      this.audioManager.playSound('punch', 0.9);
+    });
+
+    // ── Items ─────────────────────────────────────────────────────────────────
     this.events.on('itemCollected', (data: { rewardDisplay?: any; item: any }) => {
       this.audioManager.playSound('itemPickup', 0.7);
-      
-      // Show reward popup
+
       if (data.rewardDisplay && data.item) {
         this.visualEffects.createItemRewardPopup(
           data.item.sprite.x,
@@ -1286,26 +1280,18 @@ export class GameScene extends Phaser.Scene {
         );
       }
     });
-    
-    // Listen for item reward popup events
+
     this.events.on('itemRewardPopup', (data: { x: number; y: number; rewardDisplay: any }) => {
       this.visualEffects.createItemRewardPopup(data.x, data.y, data.rewardDisplay);
     });
 
+    // ── Level progression ─────────────────────────────────────────────────────
     this.events.on('knockdown', () => {
       this.audioManager.playSound('knockdown');
     });
 
     this.events.on('entityHit', () => {
-      this.audioManager.playSound('enemyHit');
-    });
-
-    this.events.on('jumpAttackPerformed', () => {
-      this.audioManager.playSound('special', 0.8);
-    });
-
-    this.events.on('backAttackPerformed', () => {
-      this.audioManager.playSound('special', 0.9);
+      this.audioManager.playSound('enemyHit', 0.8);
     });
 
     this.events.on('levelAdvance', () => {
@@ -1386,7 +1372,7 @@ export class GameScene extends Phaser.Scene {
       }
       
       // No lives remaining - game over
-      const score = this.itemManager ? this.itemManager.getScore() : 0;
+      const score = this.playerScore;
       if (this.widgetManager) {
         this.widgetManager.stopClock();
       }
@@ -1519,18 +1505,11 @@ export class GameScene extends Phaser.Scene {
     // Calculate final score
     const finalScore = Math.floor(baseScore * comboMultiplier);
     
-    // Update player score (use player 1 for now, can be extended for multiplayer)
+    // Accumulate into the running total and update the widget display
+    this.playerScore += finalScore;
     if (this.widgetManager) {
-      // Track score internally - widget manager will handle display
-      if (!this.playerScore) {
-        this.playerScore = 0;
-      }
-      this.playerScore += finalScore;
-      this.widgetManager.setScore(this.playerScore);
+      this.widgetManager.addScore(finalScore);
     }
-    
-    // Emit score update event
-    this.events.emit('scoreUpdated', finalScore);
     
     // Show score popup
     if (entity.sprite) {
@@ -1704,7 +1683,7 @@ export class GameScene extends Phaser.Scene {
     // Handle input and update all players (using PlayerUpdateManager)
     if (this.playerUpdateManager) {
       this.playerUpdateManager.update();
-      
+
       // Send player state updates to server
       if (this.players[0]) {
         this.playerUpdateManager.sendPlayerStateUpdate(this.players[0]);
@@ -1832,16 +1811,16 @@ export class GameScene extends Phaser.Scene {
   private checkVictory() {
     if (!this.levelManager) return;
 
-    // Check if all enemies are defeated - use EntityManager for efficiency
-    const activeEnemies = this.entityManager.getEnemies();
-    const aliveEnemies = activeEnemies.filter(enemy => enemy.isAlive());
-    const allEnemiesDefeated = aliveEnemies.length === 0 && activeEnemies.length > 0;
-    
-    // Check if level is complete
+    // Use the LevelManager as the authoritative source on remaining enemies.
+    // EntityManager is NOT reliable here because dying enemies are detached
+    // from it before their visual death-sequence finishes.
+    const remainingEnemies = this.levelManager.getRemainingEnemiesCount();
+    const hasSpawnedEnemies = this.levelManager.getTotalEnemiesSpawned() > 0;
+    const allEnemiesDefeated = hasSpawnedEnemies && remainingEnemies === 0;
+
     const isLevelComplete = this.levelManager.isLevelComplete(allEnemiesDefeated);
-    
+
     if (isLevelComplete) {
-      // Level completed! Progress to next level or show victory
       this.events.emit('levelEndReached');
     }
   }
@@ -1896,7 +1875,7 @@ export class GameScene extends Phaser.Scene {
     } else {
       // All levels complete - victory!
       console.log('[GameScene] All levels complete! Victory!');
-      const score = this.itemManager.getScore();
+      const score = this.playerScore;
       
       // Set completion flags
       if (this.storyManager) {
@@ -2099,18 +2078,25 @@ export class GameScene extends Phaser.Scene {
     this.events.off('hitboxCreated');
     this.events.off('hitStop');
     this.events.off('entityDamaged');
+    this.events.off('entityDefeated');
+    this.events.off('entityHitReaction');
+    this.events.off('entityKnockedDown');
+    this.events.off('entityGotUp');
     this.events.off('comboHit');
     this.events.off('comboReset');
-    
+    this.events.off('signatureMovePerformed');
+    this.events.off('landingPerformed');
+    this.events.off('getUpPerformed');
+    this.events.off('knockdown');
+
     // Audio events
-    this.events.off('attackPerformed');
     this.events.off('specialMovePerformed');
     this.events.off('jumpPerformed');
     this.events.off('grabPerformed');
     this.events.off('throwPerformed');
     this.events.off('weaponHit');
+    this.events.off('weaponSwing');
     this.events.off('itemCollected');
-    this.events.off('knockdown');
     this.events.off('entityHit');
     this.events.off('jumpAttackPerformed');
     this.events.off('backAttackPerformed');
@@ -2119,6 +2105,7 @@ export class GameScene extends Phaser.Scene {
     this.events.off('scoreUpdated');
     this.events.off('livesUpdated');
     this.events.off('lifeGained');
+    this.events.off('itemRewardPopup');
     
     // Settings events
     this.events.off('musicVolumeChanged');

@@ -324,7 +324,7 @@ export class Item extends BaseEntity {
     
     return true;
   }
-  
+
   /**
    * Check if character is in collection range (magnetic effect)
    */

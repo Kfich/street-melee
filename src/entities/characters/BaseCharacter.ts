@@ -819,6 +819,9 @@ export abstract class BaseCharacter extends BaseEntity {
    * Update animations based on current state
    */
   protected updateAnimations() {
+    // Don't override the collapse/restore tweens while knocked down or dying
+    if (this.state === 'knockedDown' || this.state === 'dying') return;
+
     if (this.animationSystem) {
       // Check for special attack animations
       let animKey: string | null = null;
@@ -1438,27 +1441,63 @@ export abstract class BaseCharacter extends BaseEntity {
   }
 
   /**
-   * Handle knockdown
+   * Handle knockdown — plays a collapse tween and schedules auto get-up.
    */
   protected onKnockdown(): void {
     if (!this.sprite || !this.sprite.active) return;
-    
+
     this.setState('knockedDown');
-    this.knockdownCooldown = 2000; // 2 seconds knockdown
-    
-    // Stop all movement
+    this.knockdownCooldown = 2000; // 2 seconds on the ground
+
+    // Stop all movement immediately
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
     if (body) {
       body.setVelocity(0, 0);
     }
-    
+
+    // --- Collapse visual ---
+    // Record normal scale so we can restore it on get-up
+    const normalScaleX = this.sprite.scaleX;
+    const normalScaleY = this.sprite.scaleY;
+    (this.sprite as any)._knockdownScaleX = normalScaleX;
+    (this.sprite as any)._knockdownScaleY = normalScaleY;
+
+    // Phase 1: brief squish upward (impact absorption)
+    this.scene.tweens.add({
+      targets: this.sprite,
+      scaleX: normalScaleX * 1.3,
+      scaleY: normalScaleY * 0.5,
+      duration: 80,
+      ease: 'Power2.easeOut',
+      onComplete: () => {
+        if (!this.sprite || !this.sprite.active) return;
+        // Phase 2: flatten to floor (lying down)
+        this.scene.tweens.add({
+          targets: this.sprite,
+          angle: this.facingRight ? 80 : -80,
+          scaleX: normalScaleX * 1.5,
+          scaleY: normalScaleY * 0.3,
+          duration: 180,
+          ease: 'Power3.easeIn',
+        });
+      }
+    });
+
+    // Red flash to signal heavy damage
+    this.sprite.setTint(0xff3333);
+    this.scene.time.delayedCall(160, () => {
+      if (this.sprite && this.sprite.active) {
+        this.sprite.clearTint();
+      }
+    });
+
     // Emit knockdown event
     this.scene.events.emit('entityKnockedDown', {
       entity: this,
       x: this.sprite.x,
       y: this.sprite.y
     });
-    
+
     // Auto get-up after cooldown
     this.scene.time.delayedCall(this.knockdownCooldown, () => {
       if (this.health > 0 && this.sprite && this.sprite.active) {
@@ -1468,15 +1507,44 @@ export abstract class BaseCharacter extends BaseEntity {
   }
 
   /**
-   * Handle get-up from knockdown
+   * Handle get-up from knockdown — restores sprite geometry and grants
+   * brief invincibility with a visible blink.
    */
   protected onGetUp(): void {
     if (!this.sprite || !this.sprite.active) return;
-    
+
     this.setState('idle');
     this.knockdownCooldown = 0;
-    this.invincibilityFrames = 60; // ~1 second invincibility after get-up
-    
+    this.invincibilityFrames = 60; // ~1 second at 60 fps
+
+    // Restore normal orientation
+    const normalScaleX = (this.sprite as any)._knockdownScaleX ?? this.sprite.scaleX;
+    const normalScaleY = (this.sprite as any)._knockdownScaleY ?? this.sprite.scaleY;
+
+    this.scene.tweens.add({
+      targets: this.sprite,
+      angle: 0,
+      scaleX: normalScaleX,
+      scaleY: normalScaleY,
+      duration: 200,
+      ease: 'Back.easeOut',
+    });
+
+    // Invincibility blink (6 flashes over ~600 ms)
+    this.scene.tweens.add({
+      targets: this.sprite,
+      alpha: { from: 1, to: 0.25 },
+      duration: 80,
+      yoyo: true,
+      repeat: 5,
+      ease: 'Linear',
+      onComplete: () => {
+        if (this.sprite && this.sprite.active) {
+          this.sprite.setAlpha(1);
+        }
+      }
+    });
+
     // Emit get-up event
     this.scene.events.emit('entityGotUp', {
       entity: this,

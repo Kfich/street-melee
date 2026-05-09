@@ -29,11 +29,21 @@ export class EntityManager {
   }
 
   /**
-   * Remove an entity
+   * Remove an entity (and destroy its sprite)
    */
   remove(entity: BaseEntity): void {
     this.entities.delete(entity);
     entity.destroy();
+    this.markDirty();
+  }
+
+  /**
+   * Detach an entity from tracking without destroying it.
+   * Use this before running a death/exit animation so the entity stops
+   * receiving AI updates but its sprite remains alive for the tween.
+   */
+  detach(entity: BaseEntity): void {
+    this.entities.delete(entity);
     this.markDirty();
   }
 

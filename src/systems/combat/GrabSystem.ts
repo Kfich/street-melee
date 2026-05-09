@@ -265,12 +265,12 @@ export class GrabSystem {
             thrownEnemy: target,
             hitEnemy: otherEnemy
           });
-          
+
           break; // Only hit one enemy
         }
       }
     });
-    
+
     return true;
   }
 
