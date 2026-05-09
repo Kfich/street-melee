@@ -1,6 +1,7 @@
 import { BaseMenuScene } from '../../ui/menu/BaseMenuScene';
 import { MenuContainer } from '../../ui/menu/MenuContainer';
 import { MusicContext } from '../../systems/audio/MusicState';
+import { HighScoreManager } from '../../systems/scores/HighScoreManager';
 
 export class GameOverScene extends BaseMenuScene {
   private isVictory: boolean = false;
@@ -9,6 +10,7 @@ export class GameOverScene extends BaseMenuScene {
   private titleText?: Phaser.GameObjects.Text;
   private scoreText?: Phaser.GameObjects.Text;
   private timeText?: Phaser.GameObjects.Text;
+  private submittedName?: string;
 
   constructor() {
     super('GameOverScene');
@@ -128,35 +130,120 @@ export class GameOverScene extends BaseMenuScene {
   }
 
   protected createMenu() {
-    const { width, height } = this.cameras.main;
-
-    // Delay menu appearance until after the title animation finishes
-    this.time.delayedCall(800, () => {
-      this.menuContainer = new MenuContainer(
-        this,
-        width / 2,
-        height / 2 + 100,
-        '',
-        this.theme,
-        undefined,
-        this.audioManager
-      );
-
-      this.menuContainer.addButton('PLAY AGAIN', () => this.playAgain());
-      this.menuContainer.addButton('MAIN MENU', () => this.returnToMenu());
-
-      this.menuContainer.getContainer().setAlpha(0);
-      this.tweens.add({
-        targets: this.menuContainer.getContainer(),
-        alpha: 1,
-        duration: 400,
-        ease: 'Power2',
-      });
-    });
-
     this.input.keyboard?.on('keydown-ESC', () => {
       this.audioManager?.playSound('menuSelect');
       this.returnToMenu();
+    });
+
+    if (HighScoreManager.isHighScore(this.score)) {
+      // Delay until title animation finishes, then show name entry
+      this.time.delayedCall(900, () => this.setupNameEntry());
+    } else {
+      this.time.delayedCall(800, () => this.showStandardMenu());
+    }
+  }
+
+  private setupNameEntry() {
+    const { width, height } = this.cameras.main;
+    const FONT = this.theme.typography.itemFont;
+    const menuY = height / 2 + (this.gameTime > 0 ? 60 : 50);
+
+    // "NEW HIGH SCORE!" banner
+    const newHSBanner = this.add.text(width / 2, menuY, '★ NEW HIGH SCORE! ★', {
+      fontSize: '20px', fontFamily: FONT, color: '#ffd700',
+      stroke: '#000000', strokeThickness: 3,
+    }).setOrigin(0.5).setDepth(1002).setAlpha(0);
+
+    this.tweens.add({ targets: newHSBanner, alpha: 1, duration: 300, ease: 'Power2' });
+    this.tweens.add({
+      targets: newHSBanner,
+      scaleX: 1.05, scaleY: 1.05,
+      duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+    });
+
+    // Prompt label
+    const promptLabel = this.add.text(width / 2, menuY + 42, 'ENTER YOUR NAME:', {
+      fontSize: '13px', fontFamily: FONT, color: '#aaaaaa',
+      stroke: '#000000', strokeThickness: 2,
+    }).setOrigin(0.5).setDepth(1002).setAlpha(0);
+
+    this.tweens.add({ targets: promptLabel, alpha: 1, duration: 300, delay: 150, ease: 'Power2' });
+
+    // Name input display
+    let playerName = '';
+    const MAX_LEN = 8;
+    let showCursor = true;
+
+    const nameDisplay = this.add.text(width / 2, menuY + 72, '_', {
+      fontSize: '24px', fontFamily: FONT, color: '#00ff88',
+      stroke: '#000000', strokeThickness: 3,
+    }).setOrigin(0.5).setDepth(1002).setAlpha(0);
+
+    this.tweens.add({ targets: nameDisplay, alpha: 1, duration: 300, delay: 250, ease: 'Power2' });
+
+    // Hint
+    const hintText = this.add.text(width / 2, menuY + 102, 'PRESS ENTER TO CONFIRM', {
+      fontSize: '10px', fontFamily: FONT, color: '#555555',
+    }).setOrigin(0.5).setDepth(1002).setAlpha(0);
+    this.tweens.add({ targets: hintText, alpha: 1, duration: 300, delay: 400, ease: 'Power2' });
+
+    const updateDisplay = () => {
+      nameDisplay.setText((playerName || '') + (showCursor ? '_' : ' '));
+    };
+
+    const cursorTimer = this.time.addEvent({
+      delay: 530, loop: true,
+      callback: () => { showCursor = !showCursor; updateDisplay(); }
+    });
+
+    const keyHandler = (event: KeyboardEvent) => {
+      if (event.key === 'Enter') {
+        cursorTimer.destroy();
+        this.input.keyboard?.off('keydown', keyHandler);
+        [newHSBanner, promptLabel, nameDisplay, hintText].forEach(o => o.destroy());
+        this.submittedName = playerName || 'AAA';
+        HighScoreManager.addScore(this.submittedName, this.score);
+        this.showStandardMenu();
+      } else if (event.key === 'Backspace') {
+        playerName = playerName.slice(0, -1);
+        updateDisplay();
+      } else if (event.key.length === 1 && /[a-zA-Z0-9 ]/.test(event.key) && playerName.length < MAX_LEN) {
+        playerName += event.key.toUpperCase();
+        updateDisplay();
+      }
+    };
+
+    this.input.keyboard?.on('keydown', keyHandler);
+  }
+
+  private showStandardMenu() {
+    const { width, height } = this.cameras.main;
+    const menuY = height / 2 + (this.gameTime > 0 ? 80 : 100);
+
+    this.menuContainer = new MenuContainer(
+      this, width / 2, menuY, '', this.theme, undefined, this.audioManager
+    );
+
+    this.menuContainer.addButton('PLAY AGAIN', () => this.playAgain());
+
+    if (this.submittedName !== undefined || HighScoreManager.getScores().length > 0) {
+      this.menuContainer.addButton('HIGH SCORES', () => this.openHighScores());
+    }
+
+    this.menuContainer.addButton('MAIN MENU', () => this.returnToMenu());
+
+    this.menuContainer.getContainer().setAlpha(0);
+    this.tweens.add({
+      targets: this.menuContainer.getContainer(),
+      alpha: 1, duration: 400, ease: 'Power2',
+    });
+  }
+
+  private openHighScores() {
+    this.scene.start('HighScoreScene', {
+      returnScene: 'MainMenuScene',
+      highlightScore: this.submittedName !== undefined ? this.score : -1,
+      highlightName: this.submittedName || '',
     });
   }
 

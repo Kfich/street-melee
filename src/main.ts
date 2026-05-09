@@ -9,6 +9,7 @@ import { ControlsScene } from './game/scenes/ControlsScene';
 import { PauseScene } from './game/scenes/PauseScene';
 import { GameOverScene } from './game/scenes/GameOverScene';
 import { ContinueScene } from './game/scenes/ContinueScene';
+import { HighScoreScene } from './game/scenes/HighScoreScene';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -36,7 +37,8 @@ const config: Phaser.Types.Core.GameConfig = {
     ControlsScene,
     PauseScene,
     GameOverScene,
-    ContinueScene
+    ContinueScene,
+    HighScoreScene
   ],
   scale: {
     mode: Phaser.Scale.FIT,

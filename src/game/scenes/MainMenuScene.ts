@@ -35,6 +35,7 @@ export class MainMenuScene extends BaseMenuScene {
     // Add menu buttons
     this.menuContainer.addButton('SINGLE PLAYER', () => this.startSinglePlayer());
     this.menuContainer.addButton('MULTIPLAYER', () => this.startMultiplayer());
+    this.menuContainer.addButton('HIGH SCORES', () => this.showHighScores());
     this.menuContainer.addButton('SETTINGS', () => this.openSettings());
     this.menuContainer.addButton('CONTROLS', () => this.showControls());
     this.menuContainer.addButton('QUIT', () => this.quit());
@@ -57,6 +58,10 @@ export class MainMenuScene extends BaseMenuScene {
 
   private openSettings() {
     this.scene.start('SettingsScene');
+  }
+
+  private showHighScores() {
+    this.scene.start('HighScoreScene', { returnScene: 'MainMenuScene' });
   }
 
   private showControls() {
