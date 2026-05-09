@@ -1371,22 +1371,60 @@ export class GameScene extends Phaser.Scene {
         }
       }
       
-      // No lives remaining - game over
-      const score = this.playerScore;
-      if (this.widgetManager) {
-        this.widgetManager.stopClock();
-      }
-      // Stop checking game over to prevent multiple triggers
-      this.isInitialized = false;
-      this.scene.start('GameOverScene', {
-        victory: false,
-        score: score,
-        time: this.widgetManager ? this.widgetManager.getGameTime() : 0
-      });
+      // No lives remaining — show continue screen
+      this.showContinueScreen();
     }
 
     // Check for victory (all enemies defeated, etc.)
     // This would be implemented based on level completion
+  }
+
+  private showContinueScreen() {
+    if (this.widgetManager) {
+      this.widgetManager.stopClock();
+    }
+    // Prevent checkGameOver from firing again while continue screen is up
+    this.isInitialized = false;
+    const gameTime = this.widgetManager ? this.widgetManager.getGameTime() : 0;
+    this.scene.pause();
+    this.scene.launch('ContinueScene', { score: this.playerScore, time: gameTime });
+  }
+
+  /**
+   * Called by ContinueScene when the player chooses to continue.
+   * Restores lives and health so the game can resume normally.
+   */
+  public respawnAfterContinue() {
+    // Restore lives
+    this.playerLives = GameConfig.PLAYER_LIVES;
+    if (this.widgetManager) {
+      this.widgetManager.setLives(this.playerLives, GameConfig.PLAYER_LIVES);
+      this.widgetManager.startClock();
+    }
+
+    // Restore player
+    if (this.players[0]) {
+      const player = this.players[0];
+      (player as any).health = (player as any).maxHealth;
+      player.setState('idle');
+      player.sprite.setActive(true);
+      player.sprite.setVisible(true);
+      player.sprite.setAlpha(1);
+      player.sprite.clearTint();
+      player.sprite.setAngle(0);
+      // Reposition to a safe spot near the left of the current camera view
+      const safeX = Math.max(100, this.cameras.main.scrollX + 120);
+      player.sprite.setPosition(safeX, player.sprite.y);
+      const body = player.sprite.body as Phaser.Physics.Arcade.Body;
+      if (body) body.setVelocity(0, 0);
+
+      if (this.widgetManager) {
+        this.widgetManager.setPlayer(player);
+      }
+    }
+
+    // Re-enable game logic
+    this.isInitialized = true;
   }
 
   private initializeMultiplayer() {

@@ -8,6 +8,7 @@ import { MultiplayerMenuScene } from './game/scenes/MultiplayerMenuScene';
 import { ControlsScene } from './game/scenes/ControlsScene';
 import { PauseScene } from './game/scenes/PauseScene';
 import { GameOverScene } from './game/scenes/GameOverScene';
+import { ContinueScene } from './game/scenes/ContinueScene';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -34,7 +35,8 @@ const config: Phaser.Types.Core.GameConfig = {
     MultiplayerMenuScene,
     ControlsScene,
     PauseScene,
-    GameOverScene
+    GameOverScene,
+    ContinueScene
   ],
   scale: {
     mode: Phaser.Scale.FIT,
