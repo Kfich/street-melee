@@ -10,16 +10,17 @@ import { PauseScene } from './game/scenes/PauseScene';
 import { GameOverScene } from './game/scenes/GameOverScene';
 import { ContinueScene } from './game/scenes/ContinueScene';
 import { HighScoreScene } from './game/scenes/HighScoreScene';
+import { MobileControlsScene } from './ui/mobile/MobileControlsScene';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   width: 1024,
   height: 576,
   parent: 'game-container',
-  backgroundColor: '#000000', // This will be covered by the background image
+  backgroundColor: '#000000',
   transparent: false,
-  pixelArt: true, // Enable pixel-perfect rendering
-  antialias: false, // Disable antialiasing for crisp pixel art
+  pixelArt: true,
+  antialias: false,
   physics: {
     default: 'arcade',
     arcade: {
@@ -27,11 +28,16 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: false
     }
   },
+  input: {
+    // Enable multi-touch (up to 10 simultaneous pointers for mobile controls)
+    activePointers: 4,
+  },
   scene: [
     PreloadScene,
     MainMenuScene,
     CharacterSelectScene,
     GameScene,
+    MobileControlsScene,
     SettingsScene,
     MultiplayerMenuScene,
     ControlsScene,
@@ -42,8 +48,18 @@ const config: Phaser.Types.Core.GameConfig = {
   ],
   scale: {
     mode: Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.CENTER_BOTH
-  }
+    autoCenter: Phaser.Scale.CENTER_BOTH,
+    // Minimum playable size on small phones
+    min: {
+      width: 320,
+      height: 180,
+    },
+    // Cap at 4K so we don't waste memory on very large displays
+    max: {
+      width: 3840,
+      height: 2160,
+    },
+  },
 };
 
 new Phaser.Game(config);

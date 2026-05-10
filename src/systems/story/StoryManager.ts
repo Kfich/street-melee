@@ -119,14 +119,13 @@ export class StoryManager {
       this.saveFlags();
     }
 
-    // Pause game if needed (only if we're in GameScene and not intro/outro/level_transition)
-    // Intro/outro cutscenes should NOT pause the scene because we need time events to work
-    // We'll handle pausing gameplay differently (disable input, stop entities, etc.)
-    if (cutscene.type !== 'level_transition' && 
-        cutscene.type !== 'intro' && 
-        cutscene.type !== 'outro' && 
-        this.scene.scene.key === 'GameScene') {
-      this.scene.scene.pause('GameScene');
+    // Only pause for dialogue / story-beat cutscenes — NOT for narrative, intro, outro,
+    // or level_transition types.  Narrative overlays run while the game is live so
+    // their auto_advance timers and the update() keyboard checks still work.
+    if (cutscene.type === 'dialogue' || cutscene.type === 'story_beat') {
+      if (this.scene.scene.key === 'GameScene') {
+        this.scene.scene.pause('GameScene');
+      }
     }
 
     // Start first scene
@@ -157,8 +156,12 @@ export class StoryManager {
       }
     }
 
-    // Handle camera
-    if (scene.camera) {
+    // Handle camera — only for blocking cutscenes that own the camera.
+    // Narrative/intro/outro overlays run while gameplay is live; touching setScroll
+    // would teleport the camera away from the player.
+    const isBlockingCutscene = this.currentCutscene?.type === 'dialogue' ||
+                               this.currentCutscene?.type === 'story_beat';
+    if (scene.camera && isBlockingCutscene) {
       const camera = this.scene.cameras.main;
       camera.setZoom(scene.camera.zoom);
       camera.setScroll(scene.camera.x, scene.camera.y);
@@ -260,9 +263,11 @@ export class StoryManager {
       boxY = 100;
     }
 
-    // Create container
+    // Create container — fixed to the screen (not the world) so it doesn't scroll
+    // with the camera during narrative overlays or any other cutscene type.
     this.cutsceneContainer = this.scene.add.container(width / 2, boxY);
     this.cutsceneContainer.setDepth(10000);
+    this.cutsceneContainer.setScrollFactor(0);
     this.cutsceneContainer.setVisible(true);
     this.cutsceneContainer.setActive(true);
     // Ensure container is in the display list and on top
@@ -456,10 +461,8 @@ export class StoryManager {
     // Clear dialogue
     this.clearDialogue();
 
-    // Resume game (only if we actually paused it)
-    if (this.currentCutscene?.type !== 'level_transition' && 
-        this.currentCutscene?.type !== 'intro' && 
-        this.currentCutscene?.type !== 'outro') {
+    // Resume game only if we actually paused it (dialogue / story_beat types only).
+    if (this.currentCutscene?.type === 'dialogue' || this.currentCutscene?.type === 'story_beat') {
       this.scene.scene.resume('GameScene');
     }
 

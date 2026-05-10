@@ -78,6 +78,7 @@ export class Item extends BaseEntity {
   private glowEffect?: Phaser.GameObjects.Graphics;
   private rewardSystem?: RewardSystem;
   private collectionRange: number = 30; // Range for magnetic collection
+  private destroyTimer?: Phaser.Time.TimerEvent;
 
   constructor(scene: Phaser.Scene, x: number, y: number, itemType: ItemType = 'apple') {
     super(scene, x, y, 'item');
@@ -93,14 +94,15 @@ export class Item extends BaseEntity {
   private setupItem() {
     // Safety check: ensure scene, sys, and textures are available
     if (!this.scene || !this.scene.sys || !this.scene.textures) {
-      console.error('[Item] Scene, sys, or textures not available in setupItem', {
-        hasScene: !!this.scene,
-        hasSys: !!(this.scene && this.scene.sys),
-        hasTextures: !!(this.scene && this.scene.textures)
-      });
       return;
     }
-    
+
+    // If the sprite's scene reference was cleared (sprite was destroyed), recreate it
+    if (!this.sprite || !(this.sprite as any).scene) {
+      this.sprite = this.scene.physics.add.sprite(0, 0, 'item');
+      this.setupPhysics();
+    }
+
     // Try to use actual sprite texture, fallback to placeholder
     const textureKey = `item_${this.itemType}`;
     if (this.scene.textures.exists(textureKey)) {
@@ -317,8 +319,10 @@ export class Item extends BaseEntity {
     // Enhanced visual feedback
     this.playCollectionEffect(rewardData.display);
     
-    // Destroy item after a short delay
-    this.scene.time.delayedCall(300, () => {
+    // Destroy item after a short delay — store the timer so reset() can cancel it
+    // if the item is returned to the pool before the timer fires.
+    this.destroyTimer = this.scene.time.delayedCall(300, () => {
+      this.destroyTimer = undefined;
       this.destroy();
     });
     
@@ -471,6 +475,13 @@ export class Item extends BaseEntity {
    * Reset item state for object pooling
    */
   reset(x: number, y: number, itemType?: ItemType): void {
+    // Cancel any pending destroy timer from a previous collection so it can't
+    // fire on a sprite that has already been returned to the pool or reused.
+    if (this.destroyTimer) {
+      this.destroyTimer.remove();
+      this.destroyTimer = undefined;
+    }
+
     // Safety check: ensure scene is available
     if (!this.scene) {
       console.error('[Item] Cannot reset - scene is not available');
@@ -526,6 +537,24 @@ export class Item extends BaseEntity {
     }
   }
   
+  /**
+   * Destroy value text and glow effect without destroying the sprite.
+   * Called by the pool after reset() so orphaned game objects don't render
+   * at world origin while the item sits idle in the pool.
+   */
+  hideVisuals(): void {
+    if (this.valueText) {
+      this.scene.tweens.killTweensOf(this.valueText);
+      this.valueText.destroy();
+      this.valueText = undefined;
+    }
+    if (this.glowEffect) {
+      this.scene.tweens.killTweensOf(this.glowEffect);
+      this.glowEffect.destroy();
+      this.glowEffect = undefined;
+    }
+  }
+
   /**
    * Clean up visual elements
    */

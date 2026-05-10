@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { Hitbox } from './Hitbox';
 import { BaseEntity } from '../../entities/base/BaseEntity';
+import { BaseCharacter } from '../../entities/characters/BaseCharacter';
 import { DamageInfo } from '../../types/GameTypes';
 import { GameConfig } from '../../config/GameConfig';
 import { SpatialGrid } from '../collision/SpatialGrid';
@@ -77,6 +78,15 @@ export class CombatSystem {
 
       // Skip if hitting self
       if (entity.sprite === hitbox.owner) return;
+
+      // Faction check: prevent friendly fire between same-faction entities.
+      // Players should not hurt other players; enemies should not hurt other enemies.
+      const ownerIsPlayer = hitbox.owner.getData('isPlayer');
+      const ownerIsEnemy  = hitbox.owner.getData('isEnemy');
+      const targetIsPlayer = entity.sprite.getData('isPlayer');
+      const targetIsEnemy  = entity.sprite.getData('isEnemy');
+      if (ownerIsPlayer && targetIsPlayer) return;
+      if (ownerIsEnemy  && targetIsEnemy)  return;
 
       // Check collision (fine-grained check)
       if (hitbox.intersects(entity.sprite)) {
@@ -208,66 +218,20 @@ export class CombatSystem {
         }
       });
       
-      // Old tween-based approach removed - using new easing approach above
-      
-      this.scene.tweens.add({
-        targets: { value: 1 },
-        value: 0,
-        duration: knockbackDuration,
-        ease: 'Power2',
-        onUpdate: (tween) => {
-          // Check if body still exists before updating
-          if (!target.sprite || !target.sprite.active || !target.sprite.body) {
-            tween.stop();
-            return;
-          }
-          
-          const progress = tween.getValue();
-          if (progress !== null && progress !== undefined) {
-            const currentBody = target.sprite.body as Phaser.Physics.Arcade.Body;
-            if (currentBody) {
-              currentBody.setVelocityX(startVelX * progress);
-              if (startVelY !== 0) {
-                currentBody.setVelocityY(startVelY * progress);
-              }
-            }
-          }
-        }
-      });
     }
 
-    // Handle knockdown
-    if (damageInfo.isKnockdown) {
+    // BaseCharacter handles knockdown in its own takeDamage() → onKnockdown() path.
+    // Enemies and bosses extend BaseEntity (not BaseCharacter) so they have no
+    // onKnockdown() — apply the state and schedule a get-up here instead.
+    if (damageInfo.isKnockdown && !(target instanceof BaseCharacter)) {
       target.setState('knockedDown');
-      // Reset state after knockdown duration
-      this.scene.time.delayedCall(1000, () => {
-        if (target.getState() === 'knockedDown') {
+      const scene = target.sprite.scene as Phaser.Scene;
+      scene.time.delayedCall(2000, () => {
+        if (target.isAlive() && target.sprite && target.sprite.active) {
           target.setState('idle');
         }
       });
     }
-
-    // Visual feedback (flash) - only if sprite still exists
-    if (target.sprite && target.sprite.active) {
-      this.flashSprite(target.sprite);
-    }
-  }
-
-  /**
-   * Flash sprite to indicate hit
-   */
-  private flashSprite(sprite: Phaser.Physics.Arcade.Sprite) {
-    sprite.setTint(0xff0000);
-    this.scene.tweens.add({
-      targets: sprite,
-      alpha: 0.5,
-      duration: 100,
-      yoyo: true,
-      onComplete: () => {
-        sprite.clearTint();
-        sprite.setAlpha(1);
-      }
-    });
   }
 
   /**

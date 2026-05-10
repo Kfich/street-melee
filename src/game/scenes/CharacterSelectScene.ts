@@ -2,7 +2,8 @@ import { BaseMenuScene } from '../../ui/menu/BaseMenuScene';
 import { MenuButton } from '../../ui/menu/MenuButton';
 import { CharacterSelectBox } from '../../ui/menu/CharacterSelectBox';
 import { CharacterType } from '../types/CharacterType';
-import { getCharacterData } from '../../ui/menu/CharacterData';
+import { CharacterPreviewPanel } from '../../ui/menu/CharacterPreviewPanel';
+// CharacterData used via CharacterPreviewPanel internally
 
 export class CharacterSelectScene extends BaseMenuScene {
   private selectedCharacters: (CharacterType | null)[] = [null, null];
@@ -12,8 +13,7 @@ export class CharacterSelectScene extends BaseMenuScene {
   private characterBoxes: CharacterSelectBox[] = [];
   private playerText?: Phaser.GameObjects.Text;
   private startButton?: MenuButton;
-  private descriptionText?: Phaser.GameObjects.Text;
-  private playstyleText?: Phaser.GameObjects.Text;
+  private previewPanel?: CharacterPreviewPanel;
   private selectedIndex: number = 0;
   private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
 
@@ -34,116 +34,69 @@ export class CharacterSelectScene extends BaseMenuScene {
   protected createMenu() {
     const { width, height } = this.cameras.main;
 
-    // Title - adjusted for 8-bit font
+    // Title
     const titleText = this.isMultiplayer ? 'SELECT CHARACTERS' : 'SELECT CHARACTER';
-    const title = this.add.text(width / 2, 40, titleText, {
-      fontSize: '32px', // Reduced for 8-bit font readability
+    this.add.text(width / 2, 38, titleText, {
+      fontSize: '30px',
       fontFamily: this.theme.typography.titleFont,
       color: `#${this.theme.colors.text.toString(16).padStart(6, '0')}`,
       stroke: '#000000',
       strokeThickness: this.theme.typography.titleStroke,
       fontStyle: 'bold',
-    });
-    title.setOrigin(0.5).setDepth(1001);
+    }).setOrigin(0.5).setDepth(1001);
 
-    // Player indicator - adjusted for 8-bit font
+    // Player indicator
     this.playerText = this.add.text(
-      width / 2,
-      100,
+      width / 2, 90,
       this.isMultiplayer ? `PLAYER ${this.currentPlayer + 1}` : 'PLAYER 1',
       {
-        fontSize: '18px', // Reduced for 8-bit font readability
+        fontSize: '16px',
         fontFamily: this.theme.typography.itemFont,
         color: `#${this.theme.colors.selected.toString(16).padStart(6, '0')}`,
         fontStyle: 'bold',
       }
-    );
-    this.playerText.setOrigin(0.5).setDepth(1001);
+    ).setOrigin(0.5).setDepth(1001);
 
-    // Character options - larger boxes with more spacing
+    // ── Character select cards ─────────────────────────────────────────────
+    // Cards are scaled down to 0.65 to free vertical space for the preview panel.
     const characters: CharacterType[] = ['axel', 'blaze', 'max', 'sammy'];
-    const boxSpacing = 220; // Increased spacing to accommodate larger cards
+    const CARD_SCALE = 0.65;
+    const boxSpacing = 158; // centres spaced so scaled edges don't touch
     const startX = width / 2 - ((characters.length - 1) * boxSpacing) / 2;
-    // Add spacing between PLAYER 1 text (at y=100) and cards
-    // Card center is at y, card extends 144px up and down (288px total height after 10% reduction)
-    // Add 40px gap between PLAYER 1 text and top of cards
-    const playerTextBottom = 100 + 18; // Approximate bottom of PLAYER 1 text (18px font)
-    const cardTop = playerTextBottom + 40; // 40px spacing
-    const y = cardTop + 144; // Card center (144px is half of 288px card height)
+
+    // Card centre y: keep same logic as before, now leaves bottom at ~396
+    const playerTextBottom = 90 + 16;
+    const cardTop = playerTextBottom + 36;
+    const cardY = cardTop + 144; // 144 = half the native 288 card height
 
     characters.forEach((char, index) => {
       const x = startX + index * boxSpacing;
       const box = new CharacterSelectBox(
-        this,
-        x,
-        y,
-        char,
-        this.theme,
+        this, x, cardY, char, this.theme,
         () => this.selectCharacter(char),
-        () => {
-          // Update description on hover
-          this.selectedIndex = index;
-          this.updateSelection();
-        }
+        () => { this.selectedIndex = index; this.updateSelection(); }
       );
+      // Scale the whole card down so we gain ~110px below for the preview panel
+      box.getContainer().setScale(CARD_SCALE);
+      box.setBaseScale(CARD_SCALE); // keep tween targets relative to this base
       this.characterBoxes.push(box);
     });
 
-    // Description area (below character boxes) - enhanced with more info
-    // Set to lower depth than character cards (1999) so cards appear on top
-    // Adjusted font sizes for 8-bit font readability
-    // Moved down to avoid overlap with cards (card bottom is at height/2 - 20 + 160 = height/2 + 140)
-    // Adding 30px gap below cards
-    this.descriptionText = this.add.text(width / 2, height / 2 + 180, '', {
-      fontSize: '12px', // Reduced for 8-bit font
-      fontFamily: this.theme.typography.labelFont,
-      color: `#${this.theme.colors.text.toString(16).padStart(6, '0')}`,
-      align: 'center',
-      wordWrap: { width: width - 100 },
-    });
-    this.descriptionText.setOrigin(0.5, 0).setDepth(1999);
+    // ── Character preview panel ────────────────────────────────────────────
+    // Sits in the space between card bottoms (~396) and instructions (~548).
+    // Panel centre is halfway through that gap.
+    const previewPanelY = Math.round(cardY + 144 * CARD_SCALE + 10 + 52);
+    this.previewPanel = new CharacterPreviewPanel(
+      this, width / 2, previewPanelY, this.theme
+    );
 
-    // Playstyle text
-    this.playstyleText = this.add.text(width / 2, height / 2 + 200, '', {
-      fontSize: '10px', // Reduced for 8-bit font
-      fontFamily: this.theme.typography.labelFont,
-      color: `#${this.theme.colors.textSecondary.toString(16).padStart(6, '0')}`,
-      fontStyle: 'italic',
-      align: 'center',
-    });
-    this.playstyleText.setOrigin(0.5, 0).setDepth(1999);
-
-    // Special moves text
-    const specialMoveText = this.add.text(width / 2, height / 2 + 215, '', {
-      fontSize: '10px', // Reduced for 8-bit font
-      fontFamily: this.theme.typography.labelFont,
-      color: `#${this.theme.colors.textSecondary.toString(16).padStart(6, '0')}`,
-      align: 'center',
-    });
-    specialMoveText.setOrigin(0.5, 0).setDepth(1999);
-    this.data.set('specialMoveText', specialMoveText);
-
-    // Signature move text
-    const signatureMoveText = this.add.text(width / 2, height / 2 + 230, '', {
-      fontSize: '10px', // Reduced for 8-bit font
-      fontFamily: this.theme.typography.labelFont,
-      color: `#${this.theme.colors.selected.toString(16).padStart(6, '0')}`,
-      align: 'center',
-      fontStyle: 'bold',
-    });
-    signatureMoveText.setOrigin(0.5, 0).setDepth(1999);
-    this.data.set('signatureMoveText', signatureMoveText);
-
-    // Update description for first character
+    // Initialise preview with the first character
     this.updateDescription(0);
 
-    // Start game button (initially hidden)
+    // ── Start button (multiplayer only) ───────────────────────────────────
     this.startButton = new MenuButton(
-      this,
-      width / 2,
-      height - 60,
-      'PRESS ENTER TO START',
-      this.theme,
+      this, width / 2, height - 58,
+      'PRESS ENTER TO START', this.theme,
       () => this.startGame()
     );
     this.startButton.setVisible(false);
@@ -154,14 +107,13 @@ export class CharacterSelectScene extends BaseMenuScene {
       if (this.canStartGame()) {
         this.startGame();
       } else {
-        // Select current character if none selected
         this.selectCharacter(characters[this.selectedIndex]);
       }
     });
 
-    // Instructions - adjusted for 8-bit font
+    // Instructions
     this.add.text(width / 2, height - 30, 'Arrow Keys: Navigate | Enter: Select', {
-      fontSize: '10px', // Reduced for 8-bit font
+      fontSize: '10px',
       fontFamily: this.theme.typography.labelFont,
       color: `#${this.theme.colors.textSecondary.toString(16).padStart(6, '0')}`,
     }).setOrigin(0.5).setDepth(1001);
@@ -193,34 +145,10 @@ export class CharacterSelectScene extends BaseMenuScene {
   }
 
   private updateDescription(index: number) {
-    if (index >= 0 && index < this.characterBoxes.length) {
-      const characterType = this.characterBoxes[index].getCharacterType();
-      const characterData = getCharacterData(characterType);
-      
-      if (this.descriptionText) {
-        this.descriptionText.setText(characterData.description);
-      }
-      if (this.playstyleText) {
-        this.playstyleText.setText(`Playstyle: ${characterData.playstyle}`);
-      }
-      
-      // Update special moves
-      const specialMoveText = this.data.get('specialMoveText') as Phaser.GameObjects.Text;
-      if (specialMoveText) {
-        specialMoveText.setText(`Special: ${characterData.specialMove}`);
-      }
-      
-      // Update signature move
-      const signatureMoveText = this.data.get('signatureMoveText') as Phaser.GameObjects.Text;
-      if (signatureMoveText) {
-        signatureMoveText.setText(`Signature: ${characterData.signatureMove}`);
-      }
-
-      // Play hover sound
-      if (this.audioManager) {
-        this.audioManager.playSound('menuSelect', 0.3);
-      }
-    }
+    if (index < 0 || index >= this.characterBoxes.length) return;
+    const characterType = this.characterBoxes[index].getCharacterType();
+    this.previewPanel?.updateCharacter(characterType);
+    this.audioManager?.playSound('menuSelect', 0.3);
   }
 
   selectCharacter(character: CharacterType) {
@@ -305,9 +233,8 @@ export class CharacterSelectScene extends BaseMenuScene {
 
   shutdown() {
     this.characterBoxes.forEach((box) => box.destroy());
-    if (this.startButton) {
-      this.startButton.destroy();
-    }
+    this.startButton?.destroy();
+    this.previewPanel?.destroy();
   }
 }
 

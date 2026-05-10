@@ -87,6 +87,7 @@ export class GameScene extends Phaser.Scene {
   private playerLives: number = GameConfig.PLAYER_LIVES;
   private isInitialized: boolean = false; // Track if game is fully initialized
   private cleanupCounter: number = 0;
+  private levelCompleteTriggered: boolean = false; // Prevent multiple level-end events
 
   constructor() {
     super({ key: 'GameScene' });
@@ -95,7 +96,8 @@ export class GameScene extends Phaser.Scene {
   init(data: GameSceneData) {
     // Reset initialization flag
     this.isInitialized = false;
-    
+    this.levelCompleteTriggered = false;
+
     // Initialize with character selections
     this.data.set('player1Character', data.player1Character || 'axel');
     // For single player, player2Character can be null/undefined
@@ -407,7 +409,12 @@ export class GameScene extends Phaser.Scene {
     });
 
     // Old debug text and instructions removed - widgets now handle UI display
-    
+
+    // Launch mobile on-screen controls for touch devices
+    if (this.sys.game.device.input.touch) {
+      this.scene.launch('MobileControlsScene');
+    }
+
     // Mark as initialized after a short delay to ensure all systems are ready
     this.time.delayedCall(GameConfig.INIT_DELAY_LONG, () => {
       this.isInitialized = true;
@@ -1352,21 +1359,18 @@ export class GameScene extends Phaser.Scene {
           this.widgetManager.loseLife();
         }
         
-        // If lives remaining, respawn player
+        // If lives remaining, respawn player using the full reset() which clears
+        // all combat state (knockedDown, invincibility, cooldowns, tweens, etc.)
         if (this.playerLives > 0 && this.players[0]) {
-          // Restore player health
           const player = this.players[0];
-          (player as any).health = (player as any).maxHealth;
-          player.sprite.setActive(true);
-          player.sprite.setVisible(true);
-          // Reset player position to room start
-          player.sprite.setPosition(100, player.sprite.y);
-          
+          const safeX = Math.max(100, this.cameras.main.scrollX + 120);
+          player.reset(safeX, player.sprite.y);
+
           // Update widget manager with restored player
           if (this.widgetManager) {
             this.widgetManager.setPlayer(player);
           }
-          
+
           return; // Don't game over yet
         }
       }
@@ -1402,21 +1406,11 @@ export class GameScene extends Phaser.Scene {
       this.widgetManager.startClock();
     }
 
-    // Restore player
+    // Restore player using full reset() to clear all combat state
     if (this.players[0]) {
       const player = this.players[0];
-      (player as any).health = (player as any).maxHealth;
-      player.setState('idle');
-      player.sprite.setActive(true);
-      player.sprite.setVisible(true);
-      player.sprite.setAlpha(1);
-      player.sprite.clearTint();
-      player.sprite.setAngle(0);
-      // Reposition to a safe spot near the left of the current camera view
       const safeX = Math.max(100, this.cameras.main.scrollX + 120);
-      player.sprite.setPosition(safeX, player.sprite.y);
-      const body = player.sprite.body as Phaser.Physics.Arcade.Body;
-      if (body) body.setVelocity(0, 0);
+      player.reset(safeX, player.sprite.y);
 
       if (this.widgetManager) {
         this.widgetManager.setPlayer(player);
@@ -1848,6 +1842,7 @@ export class GameScene extends Phaser.Scene {
 
   private checkVictory() {
     if (!this.levelManager) return;
+    if (this.levelCompleteTriggered) return; // Already handled — don't emit every frame
 
     // Use the LevelManager as the authoritative source on remaining enemies.
     // EntityManager is NOT reliable here because dying enemies are detached
@@ -1859,6 +1854,7 @@ export class GameScene extends Phaser.Scene {
     const isLevelComplete = this.levelManager.isLevelComplete(allEnemiesDefeated);
 
     if (isLevelComplete) {
+      this.levelCompleteTriggered = true;
       this.events.emit('levelEndReached');
     }
   }
@@ -1868,6 +1864,9 @@ export class GameScene extends Phaser.Scene {
    */
   private progressToNextLevel() {
     if (!this.levelManager) return;
+
+    // Reset so checkVictory can fire again for the next level
+    this.levelCompleteTriggered = false;
 
     const currentLevelIndex = this.levelManager.getCurrentLevel() - 1;
     const nextLevelIndex = currentLevelIndex + 1;
@@ -1998,24 +1997,16 @@ export class GameScene extends Phaser.Scene {
       this.enemyManager.clear();
     }
     
-    // Clean up weapons
-    const allWeapons = this.weaponManager.getAll();
-    allWeapons.forEach(weapon => {
-      if (weapon && weapon.sprite) {
-        weapon.sprite.destroy();
-      }
-    });
-    allWeapons.length = 0;
-    
-    // Clean up items
-    const allItems = this.itemManager.getAll();
-    allItems.forEach(item => {
-      if (item && item.sprite) {
-        item.sprite.destroy();
-      }
-    });
-    allItems.length = 0;
-    
+    // Clean up weapons via manager (handles pool properly)
+    if (this.weaponManager) {
+      this.weaponManager.clear();
+    }
+
+    // Clean up items via manager (releases back to pool, doesn't destroy sprites)
+    if (this.itemManager) {
+      this.itemManager.clear();
+    }
+
     // Clean up enemy shadows (handled by EnemyManager)
     if (this.enemyManager) {
       this.enemyManager.clear();
@@ -2028,7 +2019,12 @@ export class GameScene extends Phaser.Scene {
   shutdown() {
     // Reset initialization flag
     this.isInitialized = false;
-    
+
+    // Stop mobile controls overlay if it was launched
+    if (this.scene.isActive('MobileControlsScene')) {
+      this.scene.stop('MobileControlsScene');
+    }
+
     // Clean up event listeners to prevent memory leaks
     this.cleanupEventListeners();
     

@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { InputConfig, PlayerInputKeys } from '../../config/InputConfig';
 import { PlayerInput } from '../../types/GameTypes';
+import { globalTouchState } from './TouchInputState';
 
 /**
  * Manages input for all players
@@ -46,23 +47,36 @@ export class InputManager {
   }
 
   /**
-   * Get current input state for a player
+   * Get current input state for a player.
+   * For player 1, keyboard state is OR-merged with mobile touch state so
+   * both input methods work simultaneously.
    */
   getPlayerInput(playerIndex: number): PlayerInput {
     const keys = this.playerKeys.get(playerIndex);
-    if (!keys) {
-      return this.getEmptyInput();
+    const kb = keys ? {
+      left:    keys.get('left')?.isDown    || false,
+      right:   keys.get('right')?.isDown   || false,
+      up:      keys.get('up')?.isDown      || false,
+      down:    keys.get('down')?.isDown    || false,
+      jump:    keys.get('jump')?.isDown    || false,
+      attack:  keys.get('attack')?.isDown  || false,
+      special: keys.get('special')?.isDown || false,
+    } : this.getEmptyInput();
+
+    // Player 1 gets touch input merged in (player 2 is keyboard-only)
+    if (playerIndex === 0) {
+      return {
+        left:    kb.left    || globalTouchState.left,
+        right:   kb.right   || globalTouchState.right,
+        up:      kb.up      || globalTouchState.up,
+        down:    kb.down    || globalTouchState.down,
+        jump:    kb.jump    || globalTouchState.jump,
+        attack:  kb.attack  || globalTouchState.attack,
+        special: kb.special || globalTouchState.special,
+      };
     }
 
-    return {
-      left: keys.get('left')?.isDown || false,
-      right: keys.get('right')?.isDown || false,
-      up: keys.get('up')?.isDown || false,
-      down: keys.get('down')?.isDown || false,
-      jump: keys.get('jump')?.isDown || false,
-      attack: keys.get('attack')?.isDown || false,
-      special: keys.get('special')?.isDown || false,
-    };
+    return kb;
   }
 
   /**

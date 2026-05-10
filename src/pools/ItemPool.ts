@@ -9,16 +9,17 @@ export class ItemPool {
   private pools: Map<ItemType, ObjectPool<Item>> = new Map();
   private scene: Phaser.Scene;
 
-  constructor(scene: Phaser.Scene, initialSize: number = 5, maxSize: number = 30) {
+  constructor(scene: Phaser.Scene, _initialSize: number = 5, maxSize: number = 30) {
     this.scene = scene;
-    
-    // Initialize pools for each item type
+
+    // Initialize pools with no pre-allocated items (items created on first acquire)
+    // Pre-allocating causes physics sprites to sit at (0,0) in the world and interfere.
     const itemTypes: ItemType[] = ['apple', 'chicken', 'moneyBag', 'goldBar', 'oneUp', 'powerUp'];
     itemTypes.forEach(type => {
       this.pools.set(type, new ObjectPool<Item>(
         () => this.createItem(type),
         (item) => this.resetItem(item),
-        initialSize,
+        0,       // no pre-allocation
         maxSize
       ));
     });
@@ -38,6 +39,16 @@ export class ItemPool {
   private resetItem(item: Item): void {
     // Reset at (0, 0) - will be repositioned when acquired
     item.reset(0, 0, item.getItemType());
+    // setupItem() creates valueText/glowEffect as top-level scene objects at
+    // (0, 0); destroy them so they don't leak visible, animating objects at the
+    // world origin while the item sits in the pool.
+    item.hideVisuals();
+    // BaseEntity.reset() unconditionally re-activates the sprite; keep it
+    // deactivated while it sits in the pool so it doesn't render at (0, 0).
+    if (item.sprite) {
+      item.sprite.setActive(false);
+      item.sprite.setVisible(false);
+    }
   }
 
   /**

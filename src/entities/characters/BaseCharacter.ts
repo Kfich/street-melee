@@ -53,6 +53,7 @@ export abstract class BaseCharacter extends BaseEntity {
   protected weaponComboCount: number = 0; // Track weapon combo hits
   protected lastWeaponAttackTime: number = 0; // Track timing for weapon combos
   protected weaponComboWindow: number = 500; // Time window for weapon combos in ms
+  private _knockdownTimer?: Phaser.Time.TimerEvent;
 
   constructor(
     scene: Phaser.Scene,
@@ -458,6 +459,24 @@ export abstract class BaseCharacter extends BaseEntity {
       return; // Don't perform regular attack
     }
 
+    // Back attack (attack + jump simultaneously) — must be checked BEFORE regular attack
+    // so pressing attack+jump always triggers back attack, not plain attack.
+    if (input.attack && input.jump && this.canAttack() && this.isGrounded) {
+      this.performBackAttack();
+      return;
+    }
+
+    // Grab attempt (when close to enemy and pressing attack) — checked BEFORE regular
+    // attack so a nearby grab takes priority over a plain punch.
+    if (input.attack && this.isGrounded && this.state !== 'grabbing' && this.grabSystem) {
+      const nearbyTarget = this.findNearbyGrabTarget();
+      if (nearbyTarget && this.grabSystem.attemptGrab(this, nearbyTarget)) {
+        this.grabbedTarget = nearbyTarget;
+        this.scene.events.emit('grabPerformed');
+        return;
+      }
+    }
+
     // Attack (with combo support or weapon attack)
     if (input.attack && this.canAttack()) {
       if (this.currentWeapon) {
@@ -471,22 +490,6 @@ export abstract class BaseCharacter extends BaseEntity {
     if (input.special && this.canUseSpecial()) {
       const isForward = input.right || input.left;
       this.performSpecialMove(isForward);
-    }
-
-    // Back attack (attack + jump button simultaneously)
-    if (input.attack && input.jump && this.canAttack() && this.isGrounded) {
-      this.performBackAttack();
-      return; // Don't perform regular attack
-    }
-
-    // Grab attempt (when close to enemy and pressing attack)
-    if (input.attack && this.isGrounded && this.state !== 'grabbing' && this.grabSystem) {
-      const nearbyTarget = this.findNearbyGrabTarget();
-      if (nearbyTarget && this.grabSystem.attemptGrab(this, nearbyTarget)) {
-        this.grabbedTarget = nearbyTarget;
-        this.scene.events.emit('grabPerformed');
-        return; // Don't perform regular attack
-      }
     }
 
     // Throw (when grabbing and pressing direction + attack) with variations
@@ -606,25 +609,30 @@ export abstract class BaseCharacter extends BaseEntity {
   update(): void {
     const wasInAirBefore = this.wasInAir;
     this.checkGrounded();
-    
+
     // Detect landing (transition from air to ground)
     if (wasInAirBefore && this.isGrounded && this.landingCooldown <= 0) {
       this.onLanding();
     }
-    
+
     // Update wasInAir for next frame
     this.wasInAir = !this.isGrounded;
-    
+
     // Update landing cooldown
     if (this.landingCooldown > 0) {
       this.landingCooldown -= 16; // ~60fps
     }
-    
+
     // Update air recovery cooldown
     if (this.airRecoveryCooldown > 0) {
       this.airRecoveryCooldown -= 16; // ~60fps
     }
-    
+
+    // Decrement invincibility frames (bug fix: was never decremented, causing permanent invincibility)
+    if (this.invincibilityFrames > 0) {
+      this.invincibilityFrames--;
+    }
+
     // Update block duration and cooldown
     if (this.blockDuration > 0) {
       this.blockDuration -= 16; // ~60fps
@@ -635,25 +643,25 @@ export abstract class BaseCharacter extends BaseEntity {
     if (this.blockCooldown > 0) {
       this.blockCooldown -= 16; // ~60fps
     }
-    
+
     // Update parry window
     if (this.parryWindow > 0) {
       this.parryWindow -= 16; // ~60fps
     }
-    
+
     // Update parry cooldown
     if (this.parryCooldown > 0) {
       this.parryCooldown -= 16; // ~60fps
     }
-    
+
     // Update knockdown cooldown
     if (this.knockdownCooldown > 0) {
       this.knockdownCooldown -= 16; // ~60fps
     }
-    
+
     this.updateState();
     this.updateAnimations();
-    
+
     // Update attack cooldown
     if (this.attackCooldown > 0) {
       this.attackCooldown -= 16; // ~60fps
@@ -811,7 +819,14 @@ export abstract class BaseCharacter extends BaseEntity {
     
     // Set landing state briefly (if not attacking or in other important state)
     if (this.state !== 'attacking' && this.state !== 'grabbing' && this.state !== 'hit') {
-      this.setState('idle');
+      this.setState('landing');
+      // Revert to idle after the landing animation has had time to play.
+      // The guard in updateState() prevents it from being overridden mid-flight.
+      this.scene.time.delayedCall(150, () => {
+        if (this.sprite && this.sprite.active && this.state === 'landing') {
+          this.setState('idle');
+        }
+      });
     }
   }
 
@@ -864,14 +879,36 @@ export abstract class BaseCharacter extends BaseEntity {
   protected updateState(): void {
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
 
-    // Update state based on velocity and grounded status
+    // Update state based on velocity and grounded status.
+    // States that own their own lifecycle must not be overridden by the generic
+    // velocity-based state machine.
     if (this.isGrounded) {
-      if (Math.abs(body.velocity.x) < 10 && this.state !== 'attacking') {
+      if (
+        Math.abs(body.velocity.x) < 10 &&
+        this.state !== 'attacking' &&
+        this.state !== 'hitReaction' &&
+        this.state !== 'landing' &&
+        this.state !== 'knockedDown' &&
+        this.state !== 'dying'
+      ) {
         this.setState('idle');
-      } else if (this.state !== 'attacking' && this.state !== 'walking') {
+      } else if (
+        this.state !== 'attacking' &&
+        this.state !== 'walking' &&
+        this.state !== 'hitReaction' &&
+        this.state !== 'landing' &&
+        this.state !== 'knockedDown' &&
+        this.state !== 'dying'
+      ) {
         this.setState('walking');
       }
-    } else if (this.state !== 'jumping' && this.state !== 'attacking') {
+    } else if (
+      this.state !== 'jumping' &&
+      this.state !== 'attacking' &&
+      this.state !== 'hitReaction' &&
+      this.state !== 'knockedDown' &&
+      this.state !== 'dying'
+    ) {
       this.setState('jumping');
     }
   }
@@ -1498,8 +1535,9 @@ export abstract class BaseCharacter extends BaseEntity {
       y: this.sprite.y
     });
 
-    // Auto get-up after cooldown
-    this.scene.time.delayedCall(this.knockdownCooldown, () => {
+    // Auto get-up after cooldown — store the timer so reset() can cancel it
+    this._knockdownTimer = this.scene.time.delayedCall(this.knockdownCooldown, () => {
+      this._knockdownTimer = undefined;
       if (this.health > 0 && this.sprite && this.sprite.active) {
         this.onGetUp();
       }
@@ -1551,6 +1589,65 @@ export abstract class BaseCharacter extends BaseEntity {
       x: this.sprite.x,
       y: this.sprite.y
     });
+  }
+
+  /**
+   * Reset character state — clears all combat flags so the character is
+   * ready to play from a clean slate (used for respawn / continue).
+   */
+  reset(x?: number, y?: number): void {
+    // Kill in-flight tweens before super.reset() so they can't override the
+    // restored sprite geometry after the call returns.
+    if (this.sprite) {
+      this.scene.tweens.killTweensOf(this.sprite);
+    }
+
+    // Cancel the auto-get-up timer so it can't fire on the respawned character.
+    if (this._knockdownTimer) {
+      this._knockdownTimer.remove();
+      this._knockdownTimer = undefined;
+    }
+
+    // Deactivate any active attack hitbox so it can't deal phantom damage at
+    // the new spawn position.
+    if (this.currentHitbox) {
+      this.currentHitbox.deactivate();
+      this.currentHitbox = undefined;
+    }
+
+    super.reset(x, y);
+
+    // Restore scale — BaseEntity.reset() deletes the saved knockdown scale
+    // values without restoring them, so the sprite would remain deformed.
+    if (this.sprite) {
+      this.sprite.setScale(1, 1);
+    }
+
+    // Reset all character-specific cooldowns and flags
+    this.attackCooldown = 0;
+    this.isPerformingSpecial = false;
+    this.knockdownCooldown = 0;
+    this.invincibilityFrames = 0;
+    this.isBlocking = false;
+    this.blockDuration = 0;
+    this.blockCooldown = 0;
+    this.parryWindow = 0;
+    this.canCounter = false;
+    this.parryCooldown = 0;
+    this.landingCooldown = 0;
+    this.airRecoveryCooldown = 0;
+    this.wasInAir = false;
+    this.grabbedTarget = null;
+    this.targetYPosition = null;
+    this.airComboCount = 0;
+    this.weaponComboCount = 0;
+    this.lastDirection = { left: false, right: false };
+
+    // Drop any held weapon cleanly
+    if (this.currentWeapon) {
+      this.currentWeapon.drop();
+      this.currentWeapon = null;
+    }
   }
 
   /**

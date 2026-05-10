@@ -120,7 +120,9 @@ export class MenuToggle {
     this.background.lineStyle(2, this.theme.colors.text, 1);
     this.background.strokeRoundedRect(100 - toggleWidth / 2, -toggleHeight / 2, toggleWidth, toggleHeight, borderRadius);
 
-    // Animate toggle position and redraw
+    // Animate toggle position and redraw (kill previous tween first so rapid
+    // clicks don't stack conflicting position animations)
+    this.scene.tweens.killTweensOf(this.toggle);
     this.scene.tweens.add({
       targets: this.toggle,
       x: targetX,

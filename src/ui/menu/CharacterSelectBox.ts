@@ -23,6 +23,7 @@ export class CharacterSelectBox {
   private statsBars: Phaser.GameObjects.Graphics[] = [];
   private selectionIndicator?: Phaser.GameObjects.Text;
   private hoverOutline: Phaser.GameObjects.Graphics;
+  private baseScale: number = 1.0;
 
   constructor(
     scene: Phaser.Scene,
@@ -212,9 +213,9 @@ export class CharacterSelectBox {
       // Position bars to start after label with consistent margins
       const bgBar = scene.add.graphics();
       bgBar.fillStyle(theme.colors.secondary, 1);
-      bgBar.fillRoundedRect(barStartX - boxWidth / 2, y - barHeight / 2, actualBarWidth, barHeight, 4);
+      bgBar.fillRoundedRect(barStartX, y - barHeight / 2, actualBarWidth, barHeight, 4);
       bgBar.lineStyle(1, theme.colors.text, 0.3);
-      bgBar.strokeRoundedRect(barStartX - boxWidth / 2, y - barHeight / 2, actualBarWidth, barHeight, 4);
+      bgBar.strokeRoundedRect(barStartX, y - barHeight / 2, actualBarWidth, barHeight, 4);
       this.container.add(bgBar);
       // Ensure background bar stays behind fill
       this.container.sendToBack(bgBar);
@@ -232,9 +233,9 @@ export class CharacterSelectBox {
       }
       // Rounded fill bar with subtle border
       fillBar.fillStyle(fillColor, 1);
-      fillBar.fillRoundedRect(barStartX - boxWidth / 2, y - barHeight / 2, fillWidth, barHeight, 4);
+      fillBar.fillRoundedRect(barStartX, y - barHeight / 2, fillWidth, barHeight, 4);
       fillBar.lineStyle(1, fillColor, 0.8);
-      fillBar.strokeRoundedRect(barStartX - boxWidth / 2, y - barHeight / 2, fillWidth, barHeight, 4);
+      fillBar.strokeRoundedRect(barStartX, y - barHeight / 2, fillWidth, barHeight, 4);
       this.container.add(fillBar);
       this.statsBars.push(fillBar);
       // Bring fill bar to front
@@ -310,6 +311,11 @@ export class CharacterSelectBox {
   }
 
   private updateVisualState() {
+    // Kill any in-flight tweens so rapid navigation doesn't stack conflicting
+    // scale/glow tweens that prevent state from settling at the correct value.
+    this.scene.tweens.killTweensOf(this.container);
+    this.scene.tweens.killTweensOf(this.glow);
+
     const strokeColor = this.isSelected
       ? this.theme.colors.selected
       : this.isHovered
@@ -317,7 +323,7 @@ export class CharacterSelectBox {
       : this.theme.colors.text;
 
     const glowAlpha = this.isSelected || this.isHovered ? this.theme.effects.glowIntensity : 0;
-    const scale = this.isSelected ? this.theme.effects.selectScale : this.isHovered ? this.theme.effects.hoverScale : 1.0;
+    const scale = (this.isSelected ? this.theme.effects.selectScale : this.isHovered ? this.theme.effects.hoverScale : 1.0) * this.baseScale;
     const outlineAlpha = this.isHovered ? 1.0 : 0;
 
     // Update stroke for rounded rectangle
@@ -381,7 +387,16 @@ export class CharacterSelectBox {
   }
 
   destroy() {
+    this.scene.tweens.killTweensOf(this.container);
+    this.scene.tweens.killTweensOf(this.glow);
+    if (this.spriteImage) {
+      this.scene.tweens.killTweensOf(this.spriteImage);
+    }
     this.container.destroy();
+  }
+
+  setBaseScale(scale: number) {
+    this.baseScale = scale;
   }
 
   getContainer(): Phaser.GameObjects.Container {

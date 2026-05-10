@@ -128,6 +128,11 @@ export class MenuButton {
   }
 
   private updateVisualState() {
+    // Kill any in-flight tweens so rapid navigation doesn't stack conflicting
+    // scale/glow tweens that prevent state from settling at the correct value.
+    this.scene.tweens.killTweensOf(this.container);
+    this.scene.tweens.killTweensOf(this.glow);
+
     const scale = this.isSelected
       ? this.theme.effects.selectScale
       : this.isHovered
@@ -222,6 +227,8 @@ export class MenuButton {
   }
 
   destroy() {
+    this.scene.tweens.killTweensOf(this.container);
+    this.scene.tweens.killTweensOf(this.glow);
     this.container.destroy();
   }
 

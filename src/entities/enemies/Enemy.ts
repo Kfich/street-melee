@@ -204,9 +204,13 @@ export class Enemy extends BaseEntity {
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
     if (!body) return;
 
+    const state = this.getState();
+    // knockedDown and dying own their own lifecycle — don't override them.
+    if (state === 'knockedDown' || state === 'dying') return;
+
     // Update state based on velocity and grounded status
     if (this.isGrounded) {
-      if (Math.abs(body.velocity.x) < 10 && this.getState() !== 'attacking') {
+      if (Math.abs(body.velocity.x) < 10 && state !== 'attacking') {
         this.setState('idle');
       } else if (Math.abs(body.velocity.x) >= 10) {
         // Update facing direction FIRST, then set state
@@ -214,7 +218,7 @@ export class Enemy extends BaseEntity {
         this.setFacingRight(body.velocity.x > 0);
         this.setState('walking');
       }
-    } else if (this.getState() !== 'jumping' && this.getState() !== 'attacking') {
+    } else if (state !== 'jumping' && state !== 'attacking') {
       this.setState('jumping');
     }
   }
