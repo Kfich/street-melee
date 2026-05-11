@@ -26,6 +26,10 @@ export class StoryManager {
   // True when this cutscene ducked the underlying combat music instead of
   // swapping the track; endCutscene uses this to know whether to unduck.
   private didDuckUnderlyingMusic: boolean = false;
+  // Pending scene transition animation set by fadeIn()/fadeOut() and consumed
+  // in createDialogueBox() / nextScene() respectively.
+  private pendingTransition: 'fade_in' | 'fade_out' | null = null;
+  private static readonly FADE_DURATION = 300;
 
   constructor(scene: Phaser.Scene, audioManager?: AudioManager) {
     this.scene = scene;
@@ -356,6 +360,18 @@ export class StoryManager {
 
     // Set up input to advance (will be checked in update loop)
     // We'll handle this in the update method
+
+    // Apply pending fade-in: tween the container from transparent to opaque.
+    if (this.pendingTransition === 'fade_in') {
+      this.pendingTransition = null;
+      this.cutsceneContainer.setAlpha(0);
+      this.scene.tweens.add({
+        targets: this.cutsceneContainer,
+        alpha: 1,
+        duration: StoryManager.FADE_DURATION,
+        ease: 'Linear',
+      });
+    }
   }
 
   /**
@@ -439,9 +455,25 @@ export class StoryManager {
   }
 
   /**
-   * Move to next scene
+   * Move to next scene, with optional fade-out on the current container.
    */
   private nextScene(): void {
+    if (this.pendingTransition === 'fade_out' && this.cutsceneContainer?.active) {
+      this.pendingTransition = null;
+      this.scene.tweens.add({
+        targets: this.cutsceneContainer,
+        alpha: 0,
+        duration: StoryManager.FADE_DURATION,
+        ease: 'Linear',
+        onComplete: () => this.advanceScene(),
+      });
+    } else {
+      this.pendingTransition = null;
+      this.advanceScene();
+    }
+  }
+
+  private advanceScene(): void {
     if (!this.currentCutscene) {
       this.endCutscene();
       return;
@@ -521,18 +553,19 @@ export class StoryManager {
   }
 
   /**
-   * Fade in effect
+   * Fade in effect — marks the intent so createDialogueBox() can tween the
+   * container from transparent to opaque once it exists.
    */
   private fadeIn(): void {
-    // Implement fade in
-    // Could use camera fade or overlay
+    this.pendingTransition = 'fade_in';
   }
 
   /**
-   * Fade out effect
+   * Fade out effect — marks the intent so nextScene() can tween the container
+   * to transparent before advancing to the next cutscene scene.
    */
   private fadeOut(): void {
-    // Implement fade out
+    this.pendingTransition = 'fade_out';
   }
 
   /**
