@@ -29,6 +29,9 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: false
     }
   },
+  dom: {
+    createContainer: true,
+  },
   input: {
     // Enable multi-touch (up to 10 simultaneous pointers for mobile controls)
     activePointers: 4,
