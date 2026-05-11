@@ -680,16 +680,18 @@ export class VisualEffects {
    * @param intensity - Time scale during hit stop (0.05 = 5% speed, more dramatic)
    */
   hitStop(duration: number = 50, intensity: number = 0.05) {
-    // Store original time scale if not already in hit stop
-    if (this.scene.time.timeScale >= 1.0) {
-      // Slow down time briefly
-      this.scene.time.timeScale = intensity;
-      
-      // Use real time for the delay (not scaled time)
-      this.scene.time.delayedCall(duration, () => {
+    // Guard: don't stack hit-stops
+    if (this.scene.time.timeScale < 1.0) return;
+
+    this.scene.time.timeScale = intensity;
+
+    // window.setTimeout runs on real wall-clock time regardless of timeScale,
+    // so the pause is exactly `duration` ms — not duration/intensity ms.
+    window.setTimeout(() => {
+      if (this.scene && this.scene.time) {
         this.scene.time.timeScale = 1.0;
-      }, [], this.scene);
-    }
+      }
+    }, duration);
   }
 
   /**

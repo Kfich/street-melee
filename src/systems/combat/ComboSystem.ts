@@ -36,6 +36,8 @@ export class ComboSystem {
     currentMove: number;
     lastAttackTime: number;
     chain: ComboChain;
+    /** Timestamp until which pressing Special cancels this combo into a special move */
+    cancelWindowEnd: number;
   }> = new Map();
 
   constructor(scene: Phaser.Scene) {
@@ -104,7 +106,8 @@ export class ComboSystem {
       characterType,
       currentMove: 0,
       lastAttackTime: now,
-      chain
+      chain,
+      cancelWindowEnd: now + 150,
     });
 
     return chain.moves[0];
@@ -129,6 +132,7 @@ export class ComboSystem {
     // Move to next combo move
     combo.currentMove++;
     combo.lastAttackTime = now;
+    combo.cancelWindowEnd = now + 150;
 
     // Check if combo is complete
     if (combo.currentMove >= combo.chain.moves.length) {
@@ -147,6 +151,24 @@ export class ComboSystem {
     if (!combo) return null;
 
     return combo.chain.moves[combo.currentMove];
+  }
+
+  /**
+   * Returns true if the player is mid-combo and within the cancel window,
+   * meaning they can break into a special move right now.
+   */
+  canCancelToSpecial(playerIndex: number): boolean {
+    const combo = this.activeCombos.get(playerIndex);
+    if (!combo) return false;
+    return Date.now() <= combo.cancelWindowEnd;
+  }
+
+  /**
+   * Consume the cancel — clears the active combo so the special fires cleanly.
+   * Call this immediately before performSpecialMove when a cancel is detected.
+   */
+  consumeCancel(playerIndex: number): void {
+    this.activeCombos.delete(playerIndex);
   }
 
   /**

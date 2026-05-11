@@ -70,6 +70,7 @@ export class LevelManager {
   private spawnedEnemies: Set<string> = new Set(); // Track all spawned enemy IDs
   private totalEnemiesSpawnedCount: number = 0; // Monotonically increasing spawn counter
   private triggeredBossPoints: Set<SpawnPoint> = new Set(); // Boss spawn points that have fired
+  private levelEndEmitted: boolean = false; // Prevent X-trigger from firing every frame
 
   constructor(scene: Phaser.Scene, levelData: LevelData) {
     this.scene = scene;
@@ -152,6 +153,7 @@ export class LevelManager {
   private checkBossSpawnTriggers(playerX: number) {
     this.levelData.spawnPoints.forEach(spawnPoint => {
       if (spawnPoint.type !== 'boss') return;
+      if (!spawnPoint.active) return; // Skip sequential bosses not yet activated
       if (this.triggeredBossPoints.has(spawnPoint)) return;
 
       // Spawn when player is within 400px of the boss X position
@@ -164,6 +166,28 @@ export class LevelManager {
         }
       }
     });
+  }
+
+  /**
+   * Activate and immediately spawn the next inactive boss in the level.
+   * Returns true if a boss was found and spawned, false if no more bosses remain.
+   * Used for sequential boss fights (e.g. Level 3: Midnight → Tony).
+   */
+  activateNextBoss(): boolean {
+    const nextBoss = this.levelData.spawnPoints.find(
+      sp => sp.type === 'boss' && !sp.active
+    );
+    if (!nextBoss) return false;
+
+    nextBoss.active = true;
+    this.triggeredBossPoints.add(nextBoss);
+
+    if (nextBoss.delay && nextBoss.delay > 0) {
+      this.scene.time.delayedCall(nextBoss.delay, () => this.spawnEntity(nextBoss));
+    } else {
+      this.spawnEntity(nextBoss);
+    }
+    return true;
   }
 
   /**
@@ -314,8 +338,9 @@ export class LevelManager {
       this.checkWaveTriggers(playerX);
       this.checkBossSpawnTriggers(playerX);
 
-      // Check for level end trigger
-      if (this.levelData.endTriggerX && playerX >= this.levelData.endTriggerX) {
+      // Check for level end trigger — emit only once per level
+      if (this.levelData.endTriggerX && playerX >= this.levelData.endTriggerX && !this.levelEndEmitted) {
+        this.levelEndEmitted = true;
         this.scene.events.emit('levelEndReached');
       }
     }
@@ -520,6 +545,7 @@ export class LevelManager {
     this.waveEnemies.clear();
     this.spawnedEnemies.clear();
     this.triggeredBossPoints.clear();
+    this.levelEndEmitted = false;
     this.scrollOffset = 0;
     
     // Clean up old background
@@ -570,6 +596,7 @@ export class LevelManager {
     this.waveEnemies.clear();
     this.spawnedEnemies.clear();
     this.triggeredBossPoints.clear();
+    this.levelEndEmitted = false;
     this.checkpoints.clear();
   }
 }
@@ -663,6 +690,8 @@ export const LEVEL_CONFIGS: LevelData[] = [
       { x: 500, y: 476, type: 'enemy', enemyType: 'donovan', active: true, wave: 0 },
       { x: 700, y: 476, type: 'enemy', enemyType: 'galsia', active: true, wave: 0 },
       { x: 900, y: 450, type: 'weapon', weaponType: 'bat', active: true },
+      // Benny — boss fight at end of level 2
+      { x: 3800, y: 476, type: 'boss', bossType: 'benny', active: true, delay: 0 }
     ],
     waves: [
       {
@@ -700,9 +729,75 @@ export const LEVEL_CONFIGS: LevelData[] = [
       { x: 3000, y: 476, id: 'checkpoint2', activated: false },
       { x: 3800, y: 476, id: 'checkpoint3', activated: false }
     ],
-    endTriggerX: 3950, // Level completes when player reaches near the end
-    requiresAllWaves: true // All waves must be complete AND all enemies defeated
+    endTriggerX: 3950,
+    requiresAllWaves: true
+  },
+  {
+    id: 'level3',
+    name: 'The Finale',
+    width: 5000,
+    height: 576,
+    backgroundLayers: 3,
+    scrollSpeed: 0.7,
+    cameraBounds: { minX: 0, maxX: 5000, minY: 0, maxY: 576 },
+    spawnPoints: [
+      { x: 400, y: 476, type: 'enemy', enemyType: 'donovan', active: true, wave: 0 },
+      { x: 650, y: 476, type: 'enemy', enemyType: 'galsia', active: true, wave: 0 },
+      { x: 850, y: 476, type: 'enemy', enemyType: 'donovan', active: true, wave: 0 },
+      // Weapons scattered for the tough final gauntlet
+      { x: 600,  y: 450, type: 'weapon', weaponType: 'pipe', active: true },
+      { x: 1500, y: 450, type: 'weapon', weaponType: 'bat',  active: true },
+      { x: 3000, y: 450, type: 'weapon', weaponType: 'pipe', active: true },
+      // Items to let players survive the double-boss stretch
+      { x: 1200, y: 420, type: 'item', itemType: 'chicken', active: true },
+      { x: 3500, y: 420, type: 'item', itemType: 'chicken', active: true },
+      { x: 4200, y: 420, type: 'item', itemType: 'apple',   active: true },
+      // Midnight — first boss
+      { x: 4200, y: 476, type: 'boss', bossType: 'midnight', active: true, delay: 0 },
+      // Tony — second boss, spawns after Midnight is defeated (handled via bossDefeated event)
+      { x: 4700, y: 476, type: 'boss', bossType: 'tony', active: false, delay: 4000 }
+    ],
+    waves: [
+      {
+        waveNumber: 1,
+        triggerX: 1000,
+        enemies: [
+          { type: 'donovan', x: 1200, y: 476 },
+          { type: 'galsia',  x: 1400, y: 476 },
+          { type: 'galsia',  x: 1600, y: 476 },
+          { type: 'donovan', x: 1800, y: 476 }
+        ]
+      },
+      {
+        waveNumber: 2,
+        triggerX: 2200,
+        enemies: [
+          { type: 'donovan', x: 2400, y: 476, delay: 0   },
+          { type: 'donovan', x: 2600, y: 476, delay: 300 },
+          { type: 'galsia',  x: 2800, y: 476, delay: 100 },
+          { type: 'galsia',  x: 3000, y: 476, delay: 400 },
+          { type: 'donovan', x: 3200, y: 476, delay: 600 }
+        ]
+      },
+      {
+        waveNumber: 3,
+        triggerX: 3500,
+        enemies: [
+          { type: 'donovan', x: 3700, y: 476, delay: 0   },
+          { type: 'donovan', x: 3850, y: 476, delay: 200 },
+          { type: 'donovan', x: 4000, y: 476, delay: 400 },
+          { type: 'galsia',  x: 3750, y: 490, delay: 100 },
+          { type: 'galsia',  x: 3950, y: 490, delay: 300 }
+        ]
+      }
+    ],
+    checkpoints: [
+      { x: 1500, y: 476, id: 'checkpoint1', activated: false },
+      { x: 3000, y: 476, id: 'checkpoint2', activated: false },
+      { x: 4100, y: 476, id: 'checkpoint3', activated: false }
+    ],
+    endTriggerX: 4900,
+    requiresAllWaves: true
   }
-  // Add more levels here as needed
 ];
 

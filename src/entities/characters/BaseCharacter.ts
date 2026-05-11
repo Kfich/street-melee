@@ -256,6 +256,9 @@ export abstract class BaseCharacter extends BaseEntity {
 
     // Check for dash (double-tap)
     const dashDetected = this.dashDetector.checkDash(input.left, input.right);
+    if (dashDetected) {
+      this.scene.events.emit('dashPerformed', { x: this.sprite.x, y: this.sprite.y });
+    }
 
     // Check if sprite and body are valid
     if (!this.sprite || !this.sprite.body) {
@@ -1027,10 +1030,17 @@ export abstract class BaseCharacter extends BaseEntity {
    */
   protected performSpecialMove(isForward: boolean = false): void {
     if (!this.specialMoveSystem || this.isPerformingSpecial) return;
-    
+
     const specialMove = this.specialMoveSystem.getSpecialMove(this.characterType, isForward);
     if (!specialMove) return;
-    
+
+    // Combo cancel: player pressed Special mid-combo within the cancel window.
+    // The special fires at 80 % damage as a trade-off for the early interrupt.
+    const isCancelMove = this.comboSystem?.canCancelToSpecial(this.playerIndex) ?? false;
+    if (isCancelMove) {
+      this.comboSystem!.consumeCancel(this.playerIndex);
+    }
+
     this.isPerformingSpecial = true;
     this.setState('attacking');
     this.scene.events.emit('specialMovePerformed', {
@@ -1038,7 +1048,7 @@ export abstract class BaseCharacter extends BaseEntity {
       y: this.sprite.y,
       characterType: this.characterType
     });
-    
+
     // Create special move hitbox
     const hitbox = this.specialMoveSystem.createSpecialMoveHitbox(
       this.characterType,
@@ -1046,8 +1056,9 @@ export abstract class BaseCharacter extends BaseEntity {
       isForward,
       this.facingRight
     );
-    
+
     if (hitbox) {
+      if (isCancelMove) hitbox.damage = Math.floor(hitbox.damage * 0.8);
       this.currentHitbox = hitbox;
       this.scene.events.emit('hitboxCreated', hitbox);
     }

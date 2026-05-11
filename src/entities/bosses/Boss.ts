@@ -354,19 +354,47 @@ export class Boss extends BaseEntity {
   private onPhaseChange(phase: number): void {
     const phaseData = this.phases[phase];
     console.log(`[Boss] ${this.bossType} entering phase ${phase + 1} (${(phaseData.healthThreshold * 100).toFixed(0)}% health threshold)`);
-    
-    // Visual effect for phase change
+
     this.scene.events.emit('bossPhaseChange', {
       boss: this,
       phase: phase + 1,
       bossType: this.bossType
     });
 
-    // Flash effect
-    this.sprite.setTint(0xffffff);
-    this.scene.time.delayedCall(200, () => {
-      this.sprite.clearTint();
-    });
+    if (phase === 1) {
+      // ── Phase 2: enrage flash + immediate next attack ─────────────────────
+      this.sprite.setTint(0xff4400);
+      this.scene.time.delayedCall(300, () => { this.sprite.clearTint(); });
+      // Reset cooldown so the boss attacks immediately after the flash
+      this.attackCooldown = 0;
+      this.scene.cameras.main.shake(250, 0.008);
+    } else if (phase === 2) {
+      // ── Phase 3: desperation flash + forced desperation attack ────────────
+      // Multi-flash to signal rage
+      let flashes = 0;
+      const flashInterval = this.scene.time.addEvent({
+        delay: 80,
+        repeat: 7,
+        callback: () => {
+          flashes % 2 === 0 ? this.sprite.setTint(0xff0000) : this.sprite.clearTint();
+          flashes++;
+        }
+      });
+      this.scene.time.delayedCall(640, () => {
+        flashInterval.remove();
+        this.sprite.clearTint();
+        // Force a desperation attack immediately after the flash sequence
+        const effectiveDamage = this.stats.damage * this.phases[2].damageMultiplier;
+        this.desperationAttack(effectiveDamage);
+        this.attackCooldown = this.stats.attackCooldown;
+      });
+      this.attackCooldown = 700; // Pause during flash sequence
+      this.scene.cameras.main.shake(400, 0.015);
+    } else {
+      // Phase 1 — brief white flash on spawn
+      this.sprite.setTint(0xffffff);
+      this.scene.time.delayedCall(200, () => { this.sprite.clearTint(); });
+    }
   }
 
   /**

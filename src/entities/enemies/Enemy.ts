@@ -55,6 +55,7 @@ export class Enemy extends BaseEntity {
   private currentHitbox?: Hitbox;
   private targetUpdateCounter: number = 0;
   private targetUpdateFrequency: number = 3; // Update target every 3 frames (reduce from every frame)
+  private invincibilityTimer: number = 0; // ms of remaining i-frames after a hit
 
   constructor(scene: Phaser.Scene, x: number, y: number, enemyType: EnemyType = 'basic') {
     super(scene, x, y, 'enemy');
@@ -195,6 +196,7 @@ export class Enemy extends BaseEntity {
     this.updateDepthNavigation();
     this.updateState();
     this.updateAttackCooldown();
+    this.updateInvincibility();
     this.updateAnimations();
   }
 
@@ -398,9 +400,6 @@ export class Enemy extends BaseEntity {
       this.patrol();
     }
     
-    // Force animation update after AI updates direction
-    // This ensures facing direction is immediately reflected
-    this.updateAnimations();
   }
 
   private findTarget() {
@@ -499,38 +498,111 @@ export class Enemy extends BaseEntity {
   private performAttack() {
     if (this.attackCooldown > 0) return;
 
-    this.attackCooldown = 600; // 1 second cooldown
+    switch (this.enemyType) {
+      case 'basic':   this.performJabChain(); break;
+      case 'galsia':  this.performKickCombo(); break;
+      case 'donovan': this.performHeavyStrike(); break;
+    }
+  }
+
+  /** basic — fast 2-hit jab chain, short cooldown */
+  private performJabChain() {
+    this.attackCooldown = 400;
     this.setState('attacking');
+    const sign = this.facingRight ? 1 : -1;
 
-    // Create attack hitbox
-    const facingRight = this.facingRight;
-    const offsetX = facingRight ? 20 : -20;
-    
-    this.currentHitbox = new Hitbox(
-      this.sprite,
-      offsetX,
-      -10,
-      30,
-      40,
-      this.stats.damage,
-      { x: 100, y: 0 },
-      false
-    );
+    const hit1 = new Hitbox(this.sprite, sign * 22, -8, 26, 32, this.stats.damage - 2, { x: 80 * sign, y: 0 }, false);
+    this.scene.events.emit('hitboxCreated', hit1);
+    this.currentHitbox = hit1;
 
-    // Register hitbox
-    this.scene.events.emit('hitboxCreated', this.currentHitbox);
-
-    // End attack after duration
-    this.scene.time.delayedCall(GameConfig.ATTACK_DURATION, () => {
-      if (this.aiState === 'attack') {
-        this.setState('idle');
-        this.aiState = 'patrol';
-      }
-      if (this.currentHitbox) {
-        this.currentHitbox.deactivate();
+    this.scene.time.delayedCall(180, () => {
+      hit1.deactivate();
+      if (!this.sprite?.active) return;
+      const hit2 = new Hitbox(this.sprite, sign * 24, -12, 26, 32, this.stats.damage - 2, { x: 80 * sign, y: 0 }, false);
+      this.scene.events.emit('hitboxCreated', hit2);
+      this.currentHitbox = hit2;
+      this.scene.time.delayedCall(180, () => {
+        hit2.deactivate();
+        if (this.aiState === 'attack') { this.setState('idle'); this.aiState = 'patrol'; }
         this.currentHitbox = undefined;
+      });
+    });
+  }
+
+  /** galsia — mid-range kick with a 40 % chance of a follow-up */
+  private performKickCombo() {
+    this.attackCooldown = 500;
+    this.setState('attacking');
+    const sign = this.facingRight ? 1 : -1;
+
+    const kick1 = new Hitbox(this.sprite, sign * 26, -6, 38, 34, this.stats.damage, { x: 140 * sign, y: 0 }, false);
+    this.scene.events.emit('hitboxCreated', kick1);
+    this.currentHitbox = kick1;
+
+    this.scene.time.delayedCall(220, () => {
+      kick1.deactivate();
+      this.currentHitbox = undefined;
+
+      if (Math.random() < 0.4 && this.sprite?.active) {
+        const kick2 = new Hitbox(this.sprite, sign * 28, -10, 38, 34, this.stats.damage, { x: 120 * sign, y: 0 }, false);
+        this.scene.events.emit('hitboxCreated', kick2);
+        this.currentHitbox = kick2;
+        this.scene.time.delayedCall(200, () => {
+          kick2.deactivate();
+          if (this.aiState === 'attack') { this.setState('idle'); this.aiState = 'patrol'; }
+          this.currentHitbox = undefined;
+        });
+      } else {
+        if (this.aiState === 'attack') { this.setState('idle'); this.aiState = 'patrol'; }
       }
     });
+  }
+
+  /** donovan — slow heavy punch with a 30 % knockdown chance */
+  private performHeavyStrike() {
+    this.attackCooldown = 800;
+    this.setState('attacking');
+    const sign = this.facingRight ? 1 : -1;
+    const isKnockdown = Math.random() < 0.3;
+
+    // Longer wind-up before the hit lands
+    this.scene.time.delayedCall(160, () => {
+      if (!this.sprite?.active) return;
+      const hit = new Hitbox(
+        this.sprite, sign * 24, -14, 34, 44,
+        this.stats.damage + 2,
+        { x: 110 * sign, y: -30 },
+        isKnockdown
+      );
+      this.scene.events.emit('hitboxCreated', hit);
+      this.currentHitbox = hit;
+
+      this.scene.time.delayedCall(250, () => {
+        hit.deactivate();
+        if (this.aiState === 'attack') { this.setState('idle'); this.aiState = 'patrol'; }
+        this.currentHitbox = undefined;
+      });
+    });
+  }
+
+  /** Tick i-frame timer and apply strobe effect while invincible */
+  private updateInvincibility() {
+    if (this.invincibilityTimer <= 0) return;
+    this.invincibilityTimer -= 16;
+    if (this.invincibilityTimer <= 0) {
+      this.invincibilityTimer = 0;
+      this.sprite?.setAlpha(1);
+    } else {
+      // Strobe every 50 ms — same pattern as Boss
+      this.sprite?.setAlpha(Math.floor(this.invincibilityTimer / 50) % 2 === 0 ? 1 : 0.3);
+    }
+  }
+
+  /** Override takeDamage to respect i-frames and grant them after each hit */
+  takeDamage(amount: number): void {
+    if (this.invincibilityTimer > 0) return;
+    super.takeDamage(amount);
+    this.invincibilityTimer = 200; // 200 ms — shorter than boss (300 ms) so combat stays snappy
   }
 
   getEnemyType(): EnemyType {

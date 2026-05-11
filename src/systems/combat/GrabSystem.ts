@@ -68,6 +68,8 @@ export class GrabSystem {
       startTime: Date.now()
     });
 
+    this.scene.events.emit('grabPerformed', { x: graber.sprite.x, y: graber.sprite.y });
+
     // Set states
     graber.setState('grabbing');
     target.setState('grabbed');
@@ -176,6 +178,8 @@ export class GrabSystem {
 
     // Apply damage
     target.takeDamage(damage);
+
+    this.scene.events.emit('throwAudio', { isSlam });
 
     // Wall bounce effect
     if (willBounce) {
