@@ -93,6 +93,13 @@ export class GameScene extends Phaser.Scene {
   private isInitialized: boolean = false; // Track if game is fully initialized
   private cleanupCounter: number = 0;
   private levelCompleteTriggered: boolean = false; // Prevent multiple level-end events
+  // Screen-space hit-feedback overlays
+  private damageVignette!: Phaser.GameObjects.Rectangle;
+  private lowHealthVignette!: Phaser.GameObjects.Rectangle;
+  private lowHealthTween?: Phaser.Tweens.Tween;
+  // Run-stats tracking for the victory screen
+  private enemyKillCount: number = 0;
+  private maxComboReached: number = 0;
 
   // Remote player rendering (socket-id → objects). No physics, server-driven only.
   private remotePlayers: Map<string, Phaser.GameObjects.Sprite> = new Map();
@@ -251,6 +258,12 @@ export class GameScene extends Phaser.Scene {
 
     // Create ground (extend to room width)
     this.createGround(roomWidth, height);
+
+    // Screen-space hit-feedback overlays (fixed to camera, above all gameplay)
+    this.damageVignette = this.add.rectangle(width / 2, height / 2, width, height, 0xff0000, 0)
+      .setScrollFactor(0).setDepth(1900).setAlpha(0);
+    this.lowHealthVignette = this.add.rectangle(width / 2, height / 2, width, height, 0xff2200, 0)
+      .setScrollFactor(0).setDepth(1899).setAlpha(0);
 
     // Create players (after ground is created)
     this.createPlayers(width, height);
@@ -680,9 +693,9 @@ export class GameScene extends Phaser.Scene {
     // Score system - calculate and award points
     this.events.on('entityDefeated', (entity: BaseEntity) => {
       this.calculateDefeatScore(entity);
-      // Enemy defeats handled by EnemyManager
-      if (!entity.sprite.getData('isEnemy')) {
-        // Handle other entity types if needed
+      // Track kill count for the victory stats screen
+      if (entity.sprite.getData('isEnemy') || entity.sprite.getData('isBoss')) {
+        this.enemyKillCount++;
       }
     });
 
@@ -971,12 +984,24 @@ export class GameScene extends Phaser.Scene {
         this.widgetManager.incrementPickup();
       }
       
+      // If a health item was collected, re-check whether low-health pulse should stop
+      if (data.type === 'apple' || data.type === 'chicken') {
+        const player = this.players[0];
+        if (player) {
+          const hp = player.getHealth();
+          const maxHp = player.getMaxHealth();
+          if (hp / maxHp >= 0.25) {
+            this.stopLowHealthPulse();
+          }
+        }
+      }
+
       // Update spawn stats
       if (this.spawnTracker) {
         this.events.emit('spawnStatsUpdated', this.getSpawnStats());
       }
     });
-    
+
     // Listen for weapon pickup events
     this.events.on('weaponPickedUp', () => {
       this.audioManager.playSound('weaponHit', 0.5);
@@ -1033,7 +1058,9 @@ export class GameScene extends Phaser.Scene {
       const currentCount = this.currentComboCounts.get(playerIndex) || 0;
       const newCount = currentCount + 1;
       this.currentComboCounts.set(playerIndex, newCount);
-      
+      // Track lifetime max combo for the victory stats screen
+      if (newCount > this.maxComboReached) this.maxComboReached = newCount;
+
       if (this.comboCounters[playerIndex]) {
         this.comboCounters[playerIndex].updateCombo(newCount);
       }
@@ -1192,6 +1219,18 @@ export class GameScene extends Phaser.Scene {
     this.events.on('entityHitReaction', (data: { entity: any; damage: number; x: number; y: number }) => {
       if (data.damage >= 20) {
         this.visualEffects.screenShakeLight(100);
+      }
+      // If the entity that was hit is a player, flash the damage vignette and
+      // recalculate whether the low-health pulse should be running.
+      if (data.entity?.sprite?.getData('isPlayer')) {
+        this.showDamageVignette(data.damage);
+        const hp = data.entity.getHealth?.() ?? Infinity;
+        const maxHp = data.entity.getMaxHealth?.() ?? Infinity;
+        if (hp / maxHp < 0.25) {
+          this.startLowHealthPulse();
+        } else {
+          this.stopLowHealthPulse();
+        }
       }
     });
 
@@ -1916,11 +1955,18 @@ export class GameScene extends Phaser.Scene {
   }
 
   private showOutroCutscene(score: number): void {
+    const statsPayload = {
+      victory: true,
+      score,
+      enemyKills: this.enemyKillCount,
+      maxCombo: this.maxComboReached,
+    };
+
     // Check for completion outro
     const outroCutscene = this.storyManager.getCutscene('outro_completion');
     if (outroCutscene) {
       this.storyManager.playCutscene(outroCutscene);
-      
+
       // After outro completes, show victory screen
       this.events.once('cutsceneEnded', () => {
         // Check for final outro
@@ -1928,25 +1974,14 @@ export class GameScene extends Phaser.Scene {
         if (finalOutro) {
           this.storyManager.playCutscene(finalOutro);
           this.events.once('cutsceneEnded', () => {
-            this.scene.start('GameOverScene', {
-              victory: true,
-              score: score
-            });
+            this.scene.start('GameOverScene', statsPayload);
           });
         } else {
-          // No final outro, go straight to victory screen
-          this.scene.start('GameOverScene', {
-            victory: true,
-            score: score
-          });
+          this.scene.start('GameOverScene', statsPayload);
         }
       });
     } else {
-      // No outro cutscene, go straight to victory screen
-      this.scene.start('GameOverScene', {
-        victory: true,
-        score: score
-      });
+      this.scene.start('GameOverScene', statsPayload);
     }
   }
 
@@ -2314,7 +2349,8 @@ export class GameScene extends Phaser.Scene {
    * Retained as a fallback when scene-based routing returns no key.
    */
   private getLevelMusicTrack(levelIndex: number): string {
-    const tracks = ['level1', 'level2', 'level2'];
+    // Level 3 uses the boss fight track — more intense for "The Finale"
+    const tracks = ['level1', 'level2', 'bossFight'];
     return tracks[levelIndex] ?? 'level1';
   }
 
@@ -2347,6 +2383,52 @@ export class GameScene extends Phaser.Scene {
    * fades in, holds, then fades out. Rendered in screen space so it stays
    * centred regardless of camera position.
    */
+  /** Flash a red vignette when the player takes damage. */
+  private showDamageVignette(damage: number): void {
+    if (!this.damageVignette) return;
+    const peak = damage >= 20 ? 0.45 : 0.28;
+    this.tweens.killTweensOf(this.damageVignette);
+    this.tweens.add({
+      targets: this.damageVignette,
+      alpha: peak,
+      duration: 60,
+      ease: 'Power2',
+      onComplete: () => {
+        this.tweens.add({
+          targets: this.damageVignette,
+          alpha: 0,
+          duration: 380,
+          ease: 'Power2',
+        });
+      },
+    });
+  }
+
+  /** Begin a slow red pulse at screen edges when player HP < 25 %. */
+  private startLowHealthPulse(): void {
+    if (this.lowHealthTween?.isPlaying()) return; // already running
+    if (!this.lowHealthVignette) return;
+    this.lowHealthTween = this.tweens.add({
+      targets: this.lowHealthVignette,
+      alpha: 0.22,
+      duration: 700,
+      ease: 'Sine.easeInOut',
+      yoyo: true,
+      repeat: -1,
+    });
+  }
+
+  /** Stop the low-health pulse and fade the overlay out. */
+  private stopLowHealthPulse(): void {
+    if (this.lowHealthTween) {
+      this.lowHealthTween.stop();
+      this.lowHealthTween = undefined;
+    }
+    if (this.lowHealthVignette) {
+      this.tweens.add({ targets: this.lowHealthVignette, alpha: 0, duration: 300 });
+    }
+  }
+
   private showLevelTitleCard(levelIndex: number) {
     const { width, height } = this.cameras.main;
     const stageNum = levelIndex + 1;

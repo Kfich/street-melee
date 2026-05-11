@@ -7,6 +7,8 @@ export class GameOverScene extends BaseMenuScene {
   private isVictory: boolean = false;
   private score: number = 0;
   private gameTime: number = 0;
+  private enemyKills: number = 0;
+  private maxCombo: number = 0;
   private titleText?: Phaser.GameObjects.Text;
   private scoreText?: Phaser.GameObjects.Text;
   private timeText?: Phaser.GameObjects.Text;
@@ -16,10 +18,12 @@ export class GameOverScene extends BaseMenuScene {
     super('GameOverScene');
   }
 
-  init(data: { victory?: boolean; score?: number; time?: number }) {
-    this.isVictory = data.victory || false;
-    this.score     = data.score   || 0;
-    this.gameTime  = data.time    || 0;
+  init(data: { victory?: boolean; score?: number; time?: number; enemyKills?: number; maxCombo?: number }) {
+    this.isVictory  = data.victory    || false;
+    this.score      = data.score      || 0;
+    this.gameTime   = data.time       || 0;
+    this.enemyKills = data.enemyKills || 0;
+    this.maxCombo   = data.maxCombo   || 0;
   }
 
   create() {
@@ -133,6 +137,33 @@ export class GameOverScene extends BaseMenuScene {
         ease: 'Power2',
       });
     }
+
+    // ── Victory stats ──────────────────────────────────────────────────────
+    if (this.isVictory && (this.enemyKills > 0 || this.maxCombo > 0)) {
+      const FONT = this.theme.typography.itemFont;
+      const statLines = [
+        this.enemyKills > 0  ? `ENEMIES DEFEATED: ${this.enemyKills}` : null,
+        this.maxCombo   >= 2 ? `MAX COMBO: ${this.maxCombo}x`         : null,
+      ].filter(Boolean) as string[];
+
+      statLines.forEach((line, i) => {
+        const statText = this.add.text(width / 2, height * 0.61 + i * 22, line, {
+          fontSize: '12px',
+          fontFamily: FONT,
+          color: '#aaccff',
+          stroke: '#000000',
+          strokeThickness: 2,
+        }).setOrigin(0.5).setDepth(1001).setAlpha(0);
+
+        this.tweens.add({
+          targets: statText,
+          alpha: 1,
+          duration: 400,
+          delay: 750 + i * 120,
+          ease: 'Power2',
+        });
+      });
+    }
   }
 
   protected createMenu() {
@@ -151,7 +182,9 @@ export class GameOverScene extends BaseMenuScene {
   private setupNameEntry() {
     const { width, height } = this.cameras.main;
     const FONT   = this.theme.typography.itemFont;
-    const menuY  = height * 0.62 + (this.gameTime > 0 ? 10 : 0);
+    // Push the menu down to make room for victory stats (up to 2 lines × 22px)
+    const statsOffset = this.isVictory ? 50 : 0;
+    const menuY = height * 0.62 + (this.gameTime > 0 ? 10 : 0) + statsOffset;
 
     // "NEW HIGH SCORE!" banner
     const newHSBanner = this.add.text(width / 2, menuY, 'NEW HIGH SCORE!', {
@@ -223,7 +256,8 @@ export class GameOverScene extends BaseMenuScene {
 
   private showStandardMenu() {
     const { width, height } = this.cameras.main;
-    const menuY = height * 0.68 + (this.gameTime > 0 ? 10 : 0);
+    const statsOffset = this.isVictory ? 50 : 0;
+    const menuY = height * 0.68 + (this.gameTime > 0 ? 10 : 0) + statsOffset;
 
     this.menuContainer = new MenuContainer(
       this, width / 2, menuY, '', this.theme, undefined, this.audioManager

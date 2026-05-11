@@ -11,6 +11,8 @@ export class BossHealthBar {
   private healthBarBg!: Phaser.GameObjects.Rectangle;
   private healthBarFill!: Phaser.GameObjects.Rectangle;
   private healthBarBorder!: Phaser.GameObjects.Rectangle;
+  private phaseMarker66!: Phaser.GameObjects.Rectangle;
+  private phaseMarker33!: Phaser.GameObjects.Rectangle;
   private bossNameText!: Phaser.GameObjects.Text;
   private phaseText!: Phaser.GameObjects.Text;
   private healthText!: Phaser.GameObjects.Text;
@@ -70,6 +72,30 @@ export class BossHealthBar {
     this.healthBarFill.setOrigin(0, 0.5);
     this.healthBarFill.setDepth(2002);
     this.healthBarFill.setScrollFactor(0, 0);
+
+    // Phase threshold markers — thin white tick marks at 66 % and 33 %
+    const innerLeft = barX - barWidth / 2 + borderWidth;
+    const innerWidth = barWidth - borderWidth * 2;
+
+    this.phaseMarker66 = this.scene.add.rectangle(
+      innerLeft + innerWidth * 0.66,
+      barY,
+      2,
+      barHeight - borderWidth,
+      0xffffff,
+      0.9
+    );
+    this.phaseMarker66.setOrigin(0.5, 0.5).setDepth(2004).setScrollFactor(0, 0);
+
+    this.phaseMarker33 = this.scene.add.rectangle(
+      innerLeft + innerWidth * 0.33,
+      barY,
+      2,
+      barHeight - borderWidth,
+      0xffffff,
+      0.9
+    );
+    this.phaseMarker33.setOrigin(0.5, 0.5).setDepth(2004).setScrollFactor(0, 0);
 
     // Boss name text
     // Initialize with empty string - will be set when boss is assigned
@@ -232,6 +258,8 @@ export class BossHealthBar {
     this.healthBarBg.setVisible(visible);
     this.healthBarBorder.setVisible(visible);
     this.healthBarFill.setVisible(visible);
+    this.phaseMarker66.setVisible(visible);
+    this.phaseMarker33.setVisible(visible);
     this.bossNameText.setVisible(visible);
     this.phaseText.setVisible(visible);
     this.healthText.setVisible(visible);
@@ -252,6 +280,8 @@ export class BossHealthBar {
     this.healthBarBg.destroy();
     this.healthBarBorder.destroy();
     this.healthBarFill.destroy();
+    this.phaseMarker66.destroy();
+    this.phaseMarker33.destroy();
     this.bossNameText.destroy();
     this.phaseText.destroy();
     this.healthText.destroy();
