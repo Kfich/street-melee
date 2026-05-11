@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { BaseEntity } from '../base/BaseEntity';
 import { Player } from '../characters/Player';
 import { Hitbox } from '../../systems/combat/Hitbox';
+import { GameConfig } from '../../config/GameConfig';
 
 export type BossType = 'blizz' | 'benny' | 'principle' | 'midnight' | 'angela' | 'tony' | 'police';
 
@@ -215,10 +216,50 @@ export class Boss extends BaseEntity {
     this.checkGrounded();
     this.updatePhase();
     this.updateAI();
+    this.updateDepthNavigation();
     this.updateAttackCooldown();
     this.updateInvincibility();
     this.updateSprite();
     this.updateDepth();
+  }
+
+  /**
+   * Y-axis depth navigation — same technique as Enemy and BaseCharacter.
+   * Cancels world gravity while in the ground range and moves toward the
+   * target's depth position using direct sprite.setPosition() calls so the
+   * static ground collider doesn't fight us.
+   */
+  private updateDepthNavigation(): void {
+    if (!this.sprite || !this.sprite.active || !this.sprite.body) return;
+
+    const state = this.state as string;
+    if (state === 'dying' || state === 'knockedDown') return;
+
+    const body = this.sprite.body as Phaser.Physics.Arcade.Body;
+    const roomManager = (this.scene as any).roomManager;
+    const roomHeight = roomManager?.getRoomHeight?.() ?? this.scene.cameras.main.height;
+    const groundRangeTop = roomHeight - GameConfig.GROUND_HEIGHT_RANGE;
+    const groundRangeBottom = roomHeight;
+
+    const isInGroundRange = this.sprite.y >= groundRangeTop && this.sprite.y <= groundRangeBottom;
+    if (!isInGroundRange) return;
+
+    // Float freely within the depth zone — cancel world gravity
+    body.setGravityY(0);
+    body.setVelocityY(0);
+
+    // Depth pursuit toward target's Y
+    if (this.target && (this.aiState === 'pursue' || this.aiState === 'attack')) {
+      const dy = this.target.sprite.y - this.sprite.y;
+      if (Math.abs(dy) > 8) {
+        const step = (this.stats.speed * 0.6 * this.scene.game.loop.delta) / 1000;
+        const newY = this.sprite.y + Math.sign(dy) * step;
+        this.sprite.setPosition(
+          this.sprite.x,
+          Phaser.Math.Clamp(newY, groundRangeTop, groundRangeBottom)
+        );
+      }
+    }
   }
 
   /**
@@ -764,20 +805,71 @@ export class Boss extends BaseEntity {
    */
   private onDefeat(): void {
     console.log(`[Boss] ${this.bossType} defeated!`);
+
+    // Freeze AI immediately so it can't keep attacking during death sequence
+    this.setState('dying');
+
+    // Stop all physics movement
+    const body = this.sprite.body as Phaser.Physics.Arcade.Body;
+    if (body) {
+      body.setVelocity(0, 0);
+      body.setGravityY(0);
+    }
+
+    // Notify scene that boss was defeated (triggers level completion in GameScene)
     this.scene.events.emit('bossDefeated', {
       boss: this,
       bossType: this.bossType
     });
 
-    // Death animation/effect
+    // Visual defeat effect
     this.scene.events.emit('bossDefeatEffect', {
       x: this.sprite.x,
       y: this.sprite.y
     });
 
-    // Destroy after delay
-    this.scene.time.delayedCall(1000, () => {
-      this.sprite.destroy();
+    // Death sequence: strobe → collapse → fade → destroy
+    let flashCount = 0;
+    const flashTimer = this.scene.time.addEvent({
+      delay: 80,
+      repeat: 9,
+      callback: () => {
+        if (!this.sprite || !this.sprite.active) { flashTimer.destroy(); return; }
+        this.sprite.setTint(flashCount % 2 === 0 ? 0xff2222 : 0xffffff);
+        flashCount++;
+      }
+    });
+
+    this.scene.time.delayedCall(320, () => {
+      if (!this.sprite || !this.sprite.active) return;
+      this.sprite.clearTint();
+      const sx = this.sprite.scaleX;
+      const sy = this.sprite.scaleY;
+
+      this.scene.tweens.add({
+        targets: this.sprite,
+        angle: this.sprite.flipX ? -90 : 90,
+        scaleX: sx * 1.4,
+        scaleY: sy * 0.2,
+        duration: 260,
+        ease: 'Power3.easeIn',
+        onComplete: () => {
+          if (!this.sprite || !this.sprite.active) return;
+          this.scene.tweens.add({
+            targets: this.sprite,
+            alpha: 0,
+            duration: 350,
+            ease: 'Power2',
+            onComplete: () => {
+              // Notify BossManager to remove from EntityManager
+              this.scene.events.emit('bossDestroyed', this);
+              if (this.sprite && this.sprite.active) {
+                this.sprite.destroy();
+              }
+            }
+          });
+        }
+      });
     });
   }
 

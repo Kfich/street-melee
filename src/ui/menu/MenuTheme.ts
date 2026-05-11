@@ -56,49 +56,51 @@ export interface MenuTheme {
 }
 
 /**
- * Default modern menu theme
+ * 90s arcade-inspired menu theme
+ * Pure black backgrounds, electric yellow/cyan/red palette,
+ * sharp pixel borders — faithful to beat-em-up classics.
  */
 export const DEFAULT_MENU_THEME: MenuTheme = {
   colors: {
-    background: 0x1a1a2e,
-    backgroundAlpha: 0.95,
-    primary: 0x16213e,
-    secondary: 0x0f3460,
-    accent: 0xe94560,
-    text: 0xffffff,
-    textSecondary: 0xcccccc,
-    selected: 0xffd700,
-    hover: 0xff6b6b,
-    disabled: 0x666666,
+    background: 0x000000,
+    backgroundAlpha: 1.0,
+    primary: 0x0a0a1e,        // Near-black button fill
+    secondary: 0x111133,      // Dark navy
+    accent: 0xff2222,         // Electric red
+    text: 0xffffff,           // White
+    textSecondary: 0x888899,  // Dim gray-blue
+    selected: 0xffff00,       // Pure arcade yellow
+    hover: 0x00ffff,          // Cyan highlight
+    disabled: 0x333344,       // Muted dark
   },
   typography: {
     titleFont: '"Press Start 2P", "Courier New", monospace',
-    titleSize: '48px', // Reduced for 8-bit font readability
-    titleStroke: 4,
+    titleSize: '32px',
+    titleStroke: 6,
     itemFont: '"Press Start 2P", "Courier New", monospace',
-    itemSize: '20px', // Reduced for 8-bit font readability
+    itemSize: '14px',
     itemStroke: 2,
     labelFont: '"Press Start 2P", "Courier New", monospace',
-    labelSize: '14px', // Reduced for 8-bit font readability
+    labelSize: '10px',
   },
   spacing: {
-    titleMargin: 50,
-    itemSpacing: 60,
-    itemPadding: 20,
-    containerPadding: 40,
+    titleMargin: 44,
+    itemSpacing: 52,
+    itemPadding: 16,
+    containerPadding: 32,
   },
   effects: {
-    hoverScale: 1.1,
-    selectScale: 1.05,
-    transitionDuration: 150,
-    glowIntensity: 0.3,
+    hoverScale: 1.04,
+    selectScale: 1.0,         // Selection shown via color, not scale
+    transitionDuration: 80,   // Snappy arcade feel
+    glowIntensity: 0.12,
   },
   button: {
     width: 300,
-    height: 60,
-    borderRadius: 12,
+    height: 52,
+    borderRadius: 0,          // Sharp pixel corners
     strokeWidth: 2,
-    strokeColor: 0xffffff,
+    strokeColor: 0x444466,    // Subtle default border
   },
 };
 
@@ -131,4 +133,3 @@ export function createTheme(overrides: Partial<MenuTheme>): MenuTheme {
     },
   };
 }
-

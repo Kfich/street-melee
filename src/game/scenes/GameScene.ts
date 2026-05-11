@@ -668,15 +668,11 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    // Listen for boss defeat (handled by BossManager, but we need to trigger level completion)
+    // Listen for boss defeat — emit levelEndReached which the guarded transition
+    // handler will pick up (it prevents double-firing via levelCompleteTriggered).
     this.events.on('bossDefeated', (data: { boss: Boss; bossType: string }) => {
       console.log(`[GameScene] Boss defeated: ${data.bossType}`);
-      
-      // Trigger level completion (boss defeat = level complete)
-      this.events.emit('levelCompleted', {
-        levelId: `level${this.levelManager.getCurrentLevel()}`,
-        score: this.playerScore
-      });
+      this.events.emit('levelEndReached');
     });
 
     this.events.on('weaponSpawned', (weapon: Weapon) => {
@@ -748,21 +744,32 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    // Level end reached
-    // Listen for level end to show transition
+    // Level end reached — emitted by both LevelManager (position-based) and
+    // checkVictory() (enemy-defeat-based). Guard with levelCompleteTriggered so
+    // the transition only fires once regardless of which source emits it first
+    // and regardless of how many times LevelManager.update() emits it per frame.
     this.events.on('levelEndReached', () => {
+      if (this.levelCompleteTriggered) return; // already handling or handled
+      this.levelCompleteTriggered = true;
+
       if (this.levelManager && this.levelTransitionSystem) {
+        // currentLevel is 0-based index of the level that just completed.
+        // nextLevelKey is 1-based: matches the addTransition(1, ...) convention.
         const currentLevel = this.levelManager.getCurrentLevel() - 1;
+        const nextLevelKey = currentLevel + 1;
         if (this.levelTransitionSystem.shouldShowTransition(currentLevel, LEVEL_CONFIGS.length)) {
-          // Show level transition before progressing
-          this.levelTransitionSystem.showTransition(currentLevel);
-          
-          // Wait for transition to complete before progressing
-          this.events.once('cutsceneEnded', () => {
+          // showTransition() returns true when a cutscene was started; wait for it.
+          // Returns false when no transition is registered; fall through immediately.
+          const started = this.levelTransitionSystem.showTransition(nextLevelKey);
+          if (started) {
+            this.events.once('cutsceneEnded', () => {
+              this.progressToNextLevel();
+            });
+          } else {
             this.progressToNextLevel();
-          });
+          }
         } else {
-          // No transition, progress immediately
+          // No next level (or last level) — progress immediately (triggers victory)
           this.progressToNextLevel();
         }
       }
@@ -1366,7 +1373,9 @@ export class GameScene extends Phaser.Scene {
         if (this.playerLives > 0 && this.players[0]) {
           const player = this.players[0];
           const safeX = Math.max(100, this.cameras.main.scrollX + 120);
-          player.reset(safeX, player.sprite.y);
+          // Use the ground Y position — the dead sprite's Y may be off-screen
+          const groundY = this.cameras.main.height - GameConfig.GROUND_OFFSET;
+          player.reset(safeX, groundY);
 
           // Update widget manager with restored player
           if (this.widgetManager) {
@@ -1412,7 +1421,8 @@ export class GameScene extends Phaser.Scene {
     if (this.players[0]) {
       const player = this.players[0];
       const safeX = Math.max(100, this.cameras.main.scrollX + 120);
-      player.reset(safeX, player.sprite.y);
+      const groundY = this.cameras.main.height - GameConfig.GROUND_OFFSET;
+      player.reset(safeX, groundY);
 
       if (this.widgetManager) {
         this.widgetManager.setPlayer(player);
@@ -1555,10 +1565,17 @@ export class GameScene extends Phaser.Scene {
     this.currentLevelIndex = 0; // First level is index 0
     // Set scene index to 1 (1-based) for intro_scene_1 cutscene condition
     this.storyManager.setSceneIndex(0); // This will be converted to 1-based (scene 1) internally
-    
+
     // Set character for dialogue
     const player1Char = this.data.get('player1Character') as CharacterType;
     this.storyManager.setCharacter(player1Char);
+
+    // narrative_scene_1 is embedded inside the intro cutscene sequence that
+    // showIntroCutscene() fires at INIT_DELAY_VERY_LONG (1000 ms).  The
+    // CutsceneTriggerSystem also auto-fires it at INIT_DELAY_LONG (500 ms)
+    // from the roomLoaded handler — before the intro plays — which blocks
+    // intro_game from ever running.  Pre-mark it so the auto-trigger skips it.
+    this.cutsceneTriggerSystem.markTriggered('narrative_scene_1');
   }
 
   /**
@@ -1912,6 +1929,12 @@ export class GameScene extends Phaser.Scene {
     if (!this.levelManager) return;
     if (this.levelCompleteTriggered) return; // Already handled — don't emit every frame
 
+    // If a boss is alive, don't use wave/enemy tracking to end the level.
+    // The bossDefeated handler will emit levelEndReached when the boss dies.
+    // This also prevents the endTriggerX position check from completing the level
+    // while a boss fight is still in progress.
+    if (this.bossManager && this.bossManager.getCount() > 0) return;
+
     // Use the LevelManager as the authoritative source on remaining enemies.
     // EntityManager is NOT reliable here because dying enemies are detached
     // from it before their visual death-sequence finishes.
@@ -2075,10 +2098,7 @@ export class GameScene extends Phaser.Scene {
       this.itemManager.clear();
     }
 
-    // Clean up enemy shadows (handled by EnemyManager)
-    if (this.enemyManager) {
-      this.enemyManager.clear();
-    }
+    // (EnemyManager.clear() already handles shadows — no second call needed)
   }
 
   /**
@@ -2219,7 +2239,6 @@ export class GameScene extends Phaser.Scene {
     
     // Story events (handled by story systems, but clean up if needed)
     this.events.off('cutsceneEnded');
-    this.events.off('levelCompleted');
   }
 }
 

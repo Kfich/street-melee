@@ -21,12 +21,11 @@ export abstract class BaseMenuScene extends Phaser.Scene {
   create() {
     const { width, height } = this.cameras.main;
 
-    // Initialize audio manager (only if not already set)
     if (!this.audioManager) {
       this.audioManager = new AudioManager(this);
     }
 
-    // Create background
+    // Pure black background
     this.background = this.add.rectangle(
       width / 2,
       height / 2,
@@ -37,17 +36,16 @@ export abstract class BaseMenuScene extends Phaser.Scene {
     );
     this.background.setDepth(0);
 
-    // Play menu music if needed
-    this.playMenuMusic();
+    // Classic arcade screen-wipe flash on every scene enter
+    this.cameras.main.flash(220, 255, 255, 255, false);
 
-    // Create menu (to be implemented by subclasses)
+    this.playMenuMusic();
     this.createMenu();
   }
 
   protected abstract createMenu(): void;
 
   protected playMenuMusic() {
-    // Override in subclasses if needed
     this.time.delayedCall(100, () => {
       if (this.audioManager) {
         this.audioManager.playMusicWithContext('menu', MusicContext.MENU, true);
@@ -62,10 +60,8 @@ export abstract class BaseMenuScene extends Phaser.Scene {
   }
 
   shutdown() {
-    // Stop music when leaving menu
     if (this.audioManager) {
       this.audioManager.stopMusic(true);
     }
   }
 }
-

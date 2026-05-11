@@ -6,6 +6,7 @@ import { CharacterSelectScene } from './game/scenes/CharacterSelectScene';
 import { SettingsScene } from './game/scenes/SettingsScene';
 import { MultiplayerMenuScene } from './game/scenes/MultiplayerMenuScene';
 import { ControlsScene } from './game/scenes/ControlsScene';
+import { ControllerScene } from './game/scenes/ControllerScene';
 import { PauseScene } from './game/scenes/PauseScene';
 import { GameOverScene } from './game/scenes/GameOverScene';
 import { ContinueScene } from './game/scenes/ContinueScene';
@@ -41,6 +42,7 @@ const config: Phaser.Types.Core.GameConfig = {
     SettingsScene,
     MultiplayerMenuScene,
     ControlsScene,
+    ControllerScene,
     PauseScene,
     GameOverScene,
     ContinueScene,

@@ -72,19 +72,23 @@ export class LevelTransitionSystem {
   }
 
   /**
-   * Show level transition for completed level
+   * Show level transition for the next level.
+   * Returns true if a cutscene was started (caller should wait for 'cutsceneEnded'),
+   * false if no transition was registered (caller should proceed immediately).
    */
-  showTransition(levelIndex: number): void {
+  showTransition(levelIndex: number): boolean {
     const transition = this.transitions.get(levelIndex);
     if (!transition) {
-      console.warn(`[LevelTransitionSystem] No transition found for level ${levelIndex}`);
-      return;
+      console.warn(`[LevelTransitionSystem] No transition found for level ${levelIndex} — skipping`);
+      return false;
     }
 
     const cutscene = this.storyManager.getCutscene(`level_transition_${levelIndex}`);
     if (cutscene) {
       this.storyManager.playCutscene(cutscene);
+      return true;
     }
+    return false;
   }
 
   /**

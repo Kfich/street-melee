@@ -58,10 +58,10 @@ export class SettingsScene extends BaseMenuScene {
     this.loadSettings();
 
     // Create title
-    const title = this.add.text(width / 2, 50, 'SETTINGS', {
-      fontSize: this.theme.typography.titleSize,
+    const title = this.add.text(width / 2, 44, 'SETTINGS', {
+      fontSize: '24px',
       fontFamily: this.theme.typography.titleFont,
-      color: `#${this.theme.colors.text.toString(16).padStart(6, '0')}`,
+      color: `#${this.theme.colors.selected.toString(16).padStart(6, '0')}`,
       stroke: `#000000`,
       strokeThickness: this.theme.typography.titleStroke,
       fontStyle: 'bold',

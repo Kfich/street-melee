@@ -285,9 +285,19 @@ const localStorageMock = {
 };
 global.localStorage = localStorageMock as any;
 
-// Mock window
-global.window = {
-  ...global.window,
-  localStorage: localStorageMock
-} as any;
+// Augment the existing jsdom window rather than replacing it.
+// Replacing with a spread loses prototype methods like addEventListener/removeEventListener
+// which are needed by GamepadManager and other systems.
+if (typeof global.window !== 'undefined') {
+  Object.assign(global.window, { localStorage: localStorageMock });
+}
+
+// Provide a no-op navigator.getGamepads so GamepadManager constructors
+// in other test files don't throw on the initial scanForGamepads() call.
+// Tests that need specific gamepad state override this in their own beforeEach.
+Object.defineProperty(global.navigator, 'getGamepads', {
+  value: vi.fn(() => []),
+  writable: true,
+  configurable: true,
+});
 

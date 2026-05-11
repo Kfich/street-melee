@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { InputConfig, PlayerInputKeys } from '../../config/InputConfig';
 import { PlayerInput } from '../../types/GameTypes';
 import { globalTouchState } from './TouchInputState';
+import { getGamepadManager } from './GamepadManager';
 
 /**
  * Manages input for all players
@@ -48,12 +49,12 @@ export class InputManager {
 
   /**
    * Get current input state for a player.
-   * For player 1, keyboard state is OR-merged with mobile touch state so
-   * both input methods work simultaneously.
+   * Merges keyboard, mobile touch (P1 only), and gamepad inputs — any
+   * active source can trigger an action.
    */
   getPlayerInput(playerIndex: number): PlayerInput {
     const keys = this.playerKeys.get(playerIndex);
-    const kb = keys ? {
+    const kb: PlayerInput = keys ? {
       left:    keys.get('left')?.isDown    || false,
       right:   keys.get('right')?.isDown   || false,
       up:      keys.get('up')?.isDown      || false,
@@ -61,22 +62,31 @@ export class InputManager {
       jump:    keys.get('jump')?.isDown    || false,
       attack:  keys.get('attack')?.isDown  || false,
       special: keys.get('special')?.isDown || false,
-    } : this.getEmptyInput();
+    } : this.emptyInput();
 
-    // Player 1 gets touch input merged in (player 2 is keyboard-only)
+    const gp = getGamepadManager().getPlayerInput(playerIndex);
+
     if (playerIndex === 0) {
       return {
-        left:    kb.left    || globalTouchState.left,
-        right:   kb.right   || globalTouchState.right,
-        up:      kb.up      || globalTouchState.up,
-        down:    kb.down    || globalTouchState.down,
-        jump:    kb.jump    || globalTouchState.jump,
-        attack:  kb.attack  || globalTouchState.attack,
-        special: kb.special || globalTouchState.special,
+        left:    kb.left    || globalTouchState.left    || gp.left,
+        right:   kb.right   || globalTouchState.right   || gp.right,
+        up:      kb.up      || globalTouchState.up      || gp.up,
+        down:    kb.down    || globalTouchState.down    || gp.down,
+        jump:    kb.jump    || globalTouchState.jump    || gp.jump,
+        attack:  kb.attack  || globalTouchState.attack  || gp.attack,
+        special: kb.special || globalTouchState.special || gp.special,
       };
     }
 
-    return kb;
+    return {
+      left:    kb.left    || gp.left,
+      right:   kb.right   || gp.right,
+      up:      kb.up      || gp.up,
+      down:    kb.down    || gp.down,
+      jump:    kb.jump    || gp.jump,
+      attack:  kb.attack  || gp.attack,
+      special: kb.special || gp.special,
+    };
   }
 
   /**
@@ -90,10 +100,7 @@ export class InputManager {
     return phaserKey ? Phaser.Input.Keyboard.JustDown(phaserKey) : false;
   }
 
-  /**
-   * Get empty input state
-   */
-  private getEmptyInput(): PlayerInput {
+  private emptyInput(): PlayerInput {
     return {
       left: false,
       right: false,

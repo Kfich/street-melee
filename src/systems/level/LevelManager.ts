@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { Enemy, EnemyType } from '../../entities/enemies/Enemy';
 import { Weapon, WeaponType } from '../../entities/weapons/Weapon';
 import { Item, ItemType } from '../../entities/items/Item';
-// Boss spawning is now handled by BossSceneManager
+import { Boss, BossType } from '../../entities/bosses/Boss';
 
 export interface SpawnPoint {
   x: number;
@@ -69,6 +69,7 @@ export class LevelManager {
   private completedWaves: Set<number> = new Set();
   private spawnedEnemies: Set<string> = new Set(); // Track all spawned enemy IDs
   private totalEnemiesSpawnedCount: number = 0; // Monotonically increasing spawn counter
+  private triggeredBossPoints: Set<SpawnPoint> = new Set(); // Boss spawn points that have fired
 
   constructor(scene: Phaser.Scene, levelData: LevelData) {
     this.scene = scene;
@@ -127,6 +128,9 @@ export class LevelManager {
    */
   private initializeSpawns() {
     this.levelData.spawnPoints.forEach(spawnPoint => {
+      // Boss spawn points are triggered by player proximity (in checkBossSpawnTriggers)
+      if (spawnPoint.type === 'boss') return;
+
       if (spawnPoint.delay && spawnPoint.delay > 0) {
         // Delayed spawn
         const timer = this.scene.time.delayedCall(spawnPoint.delay, () => {
@@ -137,6 +141,27 @@ export class LevelManager {
       } else {
         // Immediate spawn
         this.spawnEntity(spawnPoint);
+      }
+    });
+  }
+
+  /**
+   * Trigger boss spawn points when the player moves within range of the boss X position.
+   * This prevents the boss health bar from appearing at level start.
+   */
+  private checkBossSpawnTriggers(playerX: number) {
+    this.levelData.spawnPoints.forEach(spawnPoint => {
+      if (spawnPoint.type !== 'boss') return;
+      if (this.triggeredBossPoints.has(spawnPoint)) return;
+
+      // Spawn when player is within 400px of the boss X position
+      if (playerX >= spawnPoint.x - 400) {
+        this.triggeredBossPoints.add(spawnPoint);
+        if (spawnPoint.delay && spawnPoint.delay > 0) {
+          this.scene.time.delayedCall(spawnPoint.delay, () => this.spawnEntity(spawnPoint));
+        } else {
+          this.spawnEntity(spawnPoint);
+        }
       }
     });
   }
@@ -208,9 +233,11 @@ export class LevelManager {
         }
         break;
       case 'boss':
-        // Boss spawning is now handled by BossSceneManager
-        // Skip boss spawn points to prevent duplicate spawning
-        console.log(`[LevelManager] Skipping boss spawn point - bosses are managed by BossSceneManager`);
+        if (spawnPoint.bossType) {
+          const boss = new Boss(this.scene, spawnPoint.x, spawnPoint.y, spawnPoint.bossType as BossType);
+          this.scene.events.emit('bossSpawned', boss);
+          console.log(`[LevelManager] Spawned boss '${spawnPoint.bossType}' at (${spawnPoint.x}, ${spawnPoint.y})`);
+        }
         break;
     }
   }
@@ -285,7 +312,8 @@ export class LevelManager {
     // Check for wave triggers
     if (playerX !== undefined) {
       this.checkWaveTriggers(playerX);
-      
+      this.checkBossSpawnTriggers(playerX);
+
       // Check for level end trigger
       if (this.levelData.endTriggerX && playerX >= this.levelData.endTriggerX) {
         this.scene.events.emit('levelEndReached');
@@ -491,6 +519,7 @@ export class LevelManager {
     this.checkpoints.clear();
     this.waveEnemies.clear();
     this.spawnedEnemies.clear();
+    this.triggeredBossPoints.clear();
     this.scrollOffset = 0;
     
     // Clean up old background
@@ -540,6 +569,7 @@ export class LevelManager {
     this.completedWaves.clear();
     this.waveEnemies.clear();
     this.spawnedEnemies.clear();
+    this.triggeredBossPoints.clear();
     this.checkpoints.clear();
   }
 }

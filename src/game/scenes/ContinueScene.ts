@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { AudioManager } from '../../systems/audio/AudioManager';
 
 const CONTINUE_SECONDS = 9;
+const FONT = '"Press Start 2P", "Courier New", monospace';
 
 export class ContinueScene extends Phaser.Scene {
   private countdown: number = CONTINUE_SECONDS;
@@ -17,9 +18,9 @@ export class ContinueScene extends Phaser.Scene {
   }
 
   init(data: { score?: number; time?: number }) {
-    this.score = data.score || 0;
-    this.gameTime = data.time || 0;
-    this.countdown = CONTINUE_SECONDS;
+    this.score    = data.score || 0;
+    this.gameTime = data.time  || 0;
+    this.countdown    = CONTINUE_SECONDS;
     this.inputHandled = false;
   }
 
@@ -37,17 +38,24 @@ export class ContinueScene extends Phaser.Scene {
     }
 
     // Dark overlay
-    this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.88).setDepth(0);
+    this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.92).setDepth(0);
 
-    // "CONTINUE?" title — flashes red/yellow
-    const titleText = this.add.text(width / 2, height * 0.28, 'CONTINUE?', {
-      fontSize: '78px',
-      fontFamily: 'Arial Black, Arial',
+    // Scanlines (subtle)
+    const scanlines = this.add.graphics().setDepth(1).setAlpha(0.06);
+    scanlines.fillStyle(0x000000, 1);
+    for (let y = 0; y < height; y += 4) {
+      scanlines.fillRect(0, y, width, 1);
+    }
+
+    // "CONTINUE?" title — flashes red / yellow (classic arcade)
+    const titleText = this.add.text(width / 2, height * 0.26, 'CONTINUE?', {
+      fontSize: '40px',
+      fontFamily: FONT,
       color: '#ff0000',
       stroke: '#000000',
       strokeThickness: 8,
       fontStyle: 'bold',
-    }).setOrigin(0.5).setDepth(1).setAlpha(0).setScale(0.4);
+    }).setOrigin(0.5).setDepth(2).setAlpha(0).setScale(0.4);
 
     this.tweens.add({
       targets: titleText,
@@ -66,27 +74,27 @@ export class ContinueScene extends Phaser.Scene {
         if (titleText.active) {
           titleText.setColor(titleText.style.color === '#ff0000' ? '#ffff00' : '#ff0000');
         }
-      }
+      },
     });
 
     // Big countdown number
     this.countdownText = this.add.text(width / 2, height * 0.50, String(this.countdown), {
-      fontSize: '140px',
-      fontFamily: 'Arial Black, Arial',
+      fontSize: '120px',
+      fontFamily: FONT,
       color: this.numberColor(this.countdown),
       stroke: '#000000',
-      strokeThickness: 12,
+      strokeThickness: 10,
       fontStyle: 'bold',
-    }).setOrigin(0.5).setDepth(1);
+    }).setOrigin(0.5).setDepth(2);
 
     // "Press any key" prompt
-    const promptText = this.add.text(width / 2, height * 0.73, 'PRESS ANY KEY TO CONTINUE', {
-      fontSize: '22px',
-      fontFamily: 'Arial',
+    const promptText = this.add.text(width / 2, height * 0.76, 'PRESS ANY KEY TO CONTINUE', {
+      fontSize: '13px',
+      fontFamily: FONT,
       color: '#ffffff',
       stroke: '#000000',
       strokeThickness: 3,
-    }).setOrigin(0.5).setDepth(1).setAlpha(0);
+    }).setOrigin(0.5).setDepth(2).setAlpha(0);
 
     this.tweens.add({
       targets: promptText,
@@ -100,7 +108,7 @@ export class ContinueScene extends Phaser.Scene {
     this.time.delayedCall(700, () => {
       this.tweens.add({
         targets: promptText,
-        alpha: 0.2,
+        alpha: 0.15,
         duration: 450,
         yoyo: true,
         repeat: -1,
@@ -148,7 +156,7 @@ export class ContinueScene extends Phaser.Scene {
         if (this.countdown <= 0) {
           this.doGameOver();
         }
-      }
+      },
     });
   }
 

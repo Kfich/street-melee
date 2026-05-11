@@ -192,9 +192,50 @@ export class Enemy extends BaseEntity {
 
     this.checkGrounded();
     this.updateAI();
+    this.updateDepthNavigation();
     this.updateState();
     this.updateAttackCooldown();
     this.updateAnimations();
+  }
+
+  /**
+   * Y-axis depth navigation — mirrors the player's depth system.
+   * While the enemy is within the ground range (bottom 200px), cancel world
+   * gravity so it can float at any depth level.  When pursuing a target,
+   * move toward the target's Y via direct position updates (same technique
+   * as BaseCharacter) so the arcade-physics ground collider doesn't fight us.
+   */
+  private updateDepthNavigation(): void {
+    const body = this.sprite.body as Phaser.Physics.Arcade.Body;
+    if (!body) return;
+
+    const state = this.getState();
+    if (state === 'dying' || state === 'knockedDown') return;
+
+    const roomManager = (this.scene as any).roomManager;
+    const roomHeight = roomManager?.getRoomHeight?.() ?? this.scene.cameras.main.height;
+    const groundRangeTop = roomHeight - GameConfig.GROUND_HEIGHT_RANGE;
+    const groundRangeBottom = roomHeight;
+
+    const isInGroundRange = this.sprite.y >= groundRangeTop && this.sprite.y <= groundRangeBottom;
+    if (!isInGroundRange) return;
+
+    // Cancel world gravity — enemy floats freely within the depth zone
+    body.setGravityY(0);
+    body.setVelocityY(0);
+
+    // Depth pursuit: move toward target's Y using direct position update
+    if (this.target && (this.aiState === 'pursue' || this.aiState === 'attack')) {
+      const dy = this.target.sprite.y - this.sprite.y;
+      if (Math.abs(dy) > 8) {
+        const step = (this.stats.speed * 0.6 * this.scene.game.loop.delta) / 1000;
+        const newY = this.sprite.y + Math.sign(dy) * step;
+        this.sprite.setPosition(
+          this.sprite.x,
+          Phaser.Math.Clamp(newY, groundRangeTop, groundRangeBottom)
+        );
+      }
+    }
   }
 
   /**

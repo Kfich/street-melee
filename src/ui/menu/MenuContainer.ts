@@ -32,21 +32,24 @@ export class MenuContainer {
     // Create container
     this.container = scene.add.container(x, y);
 
-    // Create title
+    // Create title (only rendered if non-empty — MainMenuScene draws its own title)
     this.title = scene.add.text(0, 0, title, {
       fontSize: this.theme.typography.titleSize,
       fontFamily: this.theme.typography.titleFont,
-      color: `#${this.theme.colors.text.toString(16).padStart(6, '0')}`,
+      color: `#${this.theme.colors.selected.toString(16).padStart(6, '0')}`,
       stroke: `#000000`,
       strokeThickness: this.theme.typography.titleStroke,
       fontStyle: 'bold',
     });
     this.title.setOrigin(0.5);
+    if (!title) {
+      this.title.setVisible(false);
+    }
 
-    // Create subtitle if provided - adjusted for 8-bit font
+    // Create subtitle if provided
     if (subtitle) {
       this.subtitle = scene.add.text(0, this.theme.spacing.titleMargin, subtitle, {
-        fontSize: '12px', // Reduced for 8-bit font readability
+        fontSize: '10px',
         fontFamily: this.theme.typography.itemFont,
         color: `#${this.theme.colors.textSecondary.toString(16).padStart(6, '0')}`,
       });

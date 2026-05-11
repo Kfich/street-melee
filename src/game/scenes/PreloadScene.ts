@@ -18,17 +18,38 @@ export class PreloadScene extends Phaser.Scene {
     // Configure CORS for loading images
     this.load.setCORS('anonymous');
 
-    // Loading text
-    const loadingText = this.add.text(width / 2, height / 2 - 50, 'Loading...', {
-      fontSize: '32px',
-      fontFamily: 'Arial',
-      color: '#ffffff'
+    // ── Retro loading screen ────────────────────────────────────────────
+    const FONT = '"Press Start 2P", "Courier New", monospace';
+
+    // Black background
+    this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 1);
+
+    // Game title on load screen
+    this.add.text(width / 2, height / 2 - 90, 'STREET MELEE', {
+      fontSize: '28px',
+      fontFamily: FONT,
+      color: '#ffff00',
+      stroke: '#000000',
+      strokeThickness: 5,
     }).setOrigin(0.5);
 
-    const progressBar = this.add.graphics();
+    // Loading label
+    const loadingText = this.add.text(width / 2, height / 2 - 30, 'LOADING...', {
+      fontSize: '14px',
+      fontFamily: FONT,
+      color: '#ffffff',
+      stroke: '#000000',
+      strokeThickness: 2,
+    }).setOrigin(0.5);
+
+    // Progress bar track
     const progressBox = this.add.graphics();
-    progressBox.fillStyle(0x222222, 0.8);
-    progressBox.fillRect(width / 2 - 160, height / 2, 320, 50);
+    progressBox.lineStyle(2, 0x444466, 1);
+    progressBox.strokeRect(width / 2 - 160, height / 2 + 10, 320, 22);
+    progressBox.fillStyle(0x0a0a1e, 1);
+    progressBox.fillRect(width / 2 - 160, height / 2 + 10, 320, 22);
+
+    const progressBar = this.add.graphics();
 
     // Load character sprites
     this.loadCharacterSprites();
@@ -51,16 +72,23 @@ export class PreloadScene extends Phaser.Scene {
     // Load audio files
     this.loadAudioFiles();
 
+    // Percent label
+    const percentText = this.add.text(width / 2, height / 2 + 48, '0%', {
+      fontSize: '10px',
+      fontFamily: FONT,
+      color: '#888899',
+    }).setOrigin(0.5);
+
     // Progress tracking
     this.load.on('progress', (value: number) => {
       progressBar.clear();
-      progressBar.fillStyle(0xffffff, 1);
-      progressBar.fillRect(width / 2 - 150, height / 2 + 10, 300 * value, 30);
+      progressBar.fillStyle(0xffff00, 1);
+      progressBar.fillRect(width / 2 - 158, height / 2 + 12, 316 * value, 18);
+      percentText.setText(`${Math.round(value * 100)}%`);
     });
 
     this.load.on('complete', () => {
       // Apply pixel-perfect filtering to all loaded textures
-      // Iterate over texture manager's texture list (it's an object, not an array)
       const textureManager = this.textures;
       const textureList = textureManager.list as Record<string, Phaser.Textures.Texture>;
       const textureKeys = Object.keys(textureList);
@@ -70,10 +98,12 @@ export class PreloadScene extends Phaser.Scene {
           texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
         }
       });
-      
+
       progressBar.destroy();
       progressBox.destroy();
-      loadingText.setText('Complete!');
+      percentText.destroy();
+      loadingText.setText('READY!');
+      loadingText.setColor('#00ff88');
     });
   }
 

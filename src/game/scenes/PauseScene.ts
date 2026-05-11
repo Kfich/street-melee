@@ -30,8 +30,11 @@ export class PauseScene extends BaseMenuScene {
 
     // Semi-transparent overlay (darker for pause)
     if (this.background) {
-      this.background.setFillStyle(0x000000, 0.8);
+      this.background.setFillStyle(0x000000, 0.88);
     }
+
+    // Override the flash from BaseMenuScene — we don't want a white flash on pause
+    this.cameras.main.resetFX();
 
     // Keyboard controls
     this.input.keyboard?.on('keydown-ESC', () => {
