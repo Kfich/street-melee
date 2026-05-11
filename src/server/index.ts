@@ -1,7 +1,17 @@
 import { Server } from 'socket.io';
 import { createServer } from 'http';
 
-const httpServer = createServer();
+const httpServer = createServer((req, res) => {
+  // Health check — required by Railway and other PaaS platforms to verify
+  // the server is alive before routing traffic to it.
+  if (req.method === 'GET' && req.url === '/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'ok', rooms: rooms.size }));
+    return;
+  }
+  res.writeHead(404);
+  res.end();
+});
 const io = new Server(httpServer, {
   cors: {
     origin: '*',

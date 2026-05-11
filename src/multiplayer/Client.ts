@@ -36,7 +36,7 @@ export class MultiplayerClient {
   private onRoomJoined?: (roomId: string) => void;
   private onError?: (error: string) => void;
 
-  constructor(serverUrl: string = 'http://localhost:3001') {
+  constructor(serverUrl: string = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001') {
     this.serverUrl = serverUrl;
   }
 

@@ -1,0 +1,9 @@
+[build]
+buildCommand = "npm run server:build"
+
+[deploy]
+startCommand = "node dist/server/index.js"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3

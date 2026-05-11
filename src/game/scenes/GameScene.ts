@@ -1422,7 +1422,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private initializeMultiplayer() {
-    this.multiplayerClient = new MultiplayerClient('http://localhost:3001');
+    this.multiplayerClient = new MultiplayerClient();
     
     // Set up callbacks
     this.multiplayerClient.onRoomCreatedCallback((roomId) => {

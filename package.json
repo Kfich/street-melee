@@ -10,7 +10,8 @@
     "electron:dev": "electron .",
     "electron:build": "npm run build && electron-builder",
     "server:dev": "tsx src/server/index.ts",
-    "server:build": "tsc -p tsconfig.server.json && node dist/server/index.js",
+    "server:build": "tsc -p tsconfig.server.json",
+    "start": "node dist/server/index.js",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage"
