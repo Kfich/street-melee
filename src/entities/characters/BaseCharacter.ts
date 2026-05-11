@@ -1046,7 +1046,8 @@ export abstract class BaseCharacter extends BaseEntity {
     this.scene.events.emit('specialMovePerformed', {
       x: this.sprite.x,
       y: this.sprite.y,
-      characterType: this.characterType
+      characterType: this.characterType,
+      moveName: specialMove.name
     });
 
     // Create special move hitbox

@@ -182,13 +182,18 @@ export class Weapon extends BaseEntity {
       const body = this.sprite.body as Phaser.Physics.Arcade.Body;
       if (body) {
         body.setVelocity(throwX, -100);
+        // Spin the weapon as it flies through the air
+        body.setAngularVelocity(facingRight ? 600 : -600);
       }
     }
-    
+
     // Clear owner after using properties
     this.owner = null;
     this.isThrown = true;
-    
+
+    // Emit event so GameScene can spawn trail particles
+    this.scene.events.emit('weaponThrown', { sprite: this.sprite });
+
     // Create throw hitbox
     this.createThrowHitbox();
     

@@ -134,6 +134,11 @@ export class EnemyManager {
       this.levelManager.onEnemyDefeated(enemyId, waveNumber);
     }
 
+    // Defeat dust cloud at the enemy's feet for extra impact
+    if (this.visualEffects) {
+      this.visualEffects.createDust(enemy.sprite.x, enemy.sprite.y, 8);
+    }
+
     // Stop physics movement
     const body = enemy.sprite.body as Phaser.Physics.Arcade.Body;
     if (body) {

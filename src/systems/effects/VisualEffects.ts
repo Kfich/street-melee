@@ -571,17 +571,16 @@ export class VisualEffects {
       const intensity = (typeof directionOrCount === 'string' ? directionOrCount : intensityOrColor) as 'light' | 'medium' | 'heavy' || 'medium';
       const direction = (typeof directionOrCount === 'number' ? directionOrCount : 1) as number;
       
-      // Reduced particle counts (50% reduction)
-      const count = intensity === 'light' ? 2 : intensity === 'medium' ? 4 : 6;
+      const count = intensity === 'light' ? 5 : intensity === 'medium' ? 8 : 12;
       const color = intensity === 'heavy' ? 0xffaa00 : 0xffff00; // Orange for heavy, yellow for others
-      
+
       for (let i = 0; i < count; i++) {
         const spark = this.scene.add.circle(
           x,
           y,
-          1 + Math.random() * 1.5, // Smaller particles
+          1.5 + Math.random() * 2,
           color,
-          0.6 // Reduced opacity from 0.9
+          0.85
         );
         spark.setDepth(998);
         

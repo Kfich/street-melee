@@ -682,7 +682,8 @@ export class GameScene extends Phaser.Scene {
         this.playerUpdateManager.setInputFrozen(true);
       }
       if (this.audioManager) {
-        this.audioManager.playMusicWithContext('boss', MusicContext.BOSS, true);
+        const bossTrack = getMusicForScene(this.currentSceneNumber, 'boss') ?? 'boss';
+        this.audioManager.playMusicWithContext(bossTrack, MusicContext.BOSS, true);
       }
     });
     this.events.on('bossEntranceEnd', () => {
@@ -696,20 +697,51 @@ export class GameScene extends Phaser.Scene {
     // either spawn the next queued boss or end the level.
     this.events.on('bossDefeated', (data: { boss: Boss; bossType: string }) => {
       console.log(`[GameScene] Boss defeated: ${data.bossType}`);
-      // If there is a sequential boss queued for this level, spawn it instead of ending.
-      // Keep boss music playing — the next entrance will switch music.
-      if (this.levelManager && this.levelManager.activateNextBoss()) {
+
+      if (!this.audioManager) {
+        if (this.levelManager && this.levelManager.activateNextBoss()) return;
+        this.events.emit('levelEndReached');
         return;
       }
-      // No more bosses — fade back to level music before the level-end transition.
-      if (this.audioManager) {
-        this.audioManager.playMusicWithContext(
-          this.getLevelMusicTrack(this.currentLevelIndex),
-          MusicContext.GAMEPLAY,
-          true
-        );
-      }
-      this.events.emit('levelEndReached');
+
+      // Duck boss music so the victory sting can punch through cleanly.
+      this.audioManager.duckMusic(0.3, 250);
+
+      const stingKey =
+        getMusicForScene(this.currentSceneNumber, 'victory') ?? 'sting_boss_defeat';
+
+      this.audioManager.playSting(stingKey, () => {
+        // If another boss is queued, hand off — its bossEntranceStart hook
+        // will swap to the next boss track. Skip the win sting and level-end.
+        if (this.levelManager && this.levelManager.activateNextBoss()) {
+          return;
+        }
+
+        const finishAndEnd = () => {
+          if (this.audioManager) {
+            this.audioManager.playMusicWithContext(
+              this.getSceneGameplayTrack(),
+              MusicContext.GAMEPLAY,
+              true
+            );
+          }
+          this.events.emit('levelEndReached');
+        };
+
+        // Optionally layer a character-specific win sting on the final boss
+        // of the level. Phase 1 has no character-win assets, so the helper
+        // returns undefined and we fall through immediately.
+        const characterStingKey = this.getCharacterWinStingKey();
+        if (
+          characterStingKey &&
+          this.cache.audio.exists(characterStingKey) &&
+          this.audioManager
+        ) {
+          this.audioManager.playSting(characterStingKey, finishAndEnd);
+        } else {
+          finishAndEnd();
+        }
+      });
     });
 
     this.events.on('weaponSpawned', (weapon: Weapon) => {
@@ -732,7 +764,10 @@ export class GameScene extends Phaser.Scene {
 
     this.events.on('waveCompleted', (waveNumber: number) => {
       console.log(`Wave ${waveNumber} completed!`);
-      // Could add visual feedback here
+      // Bright 8-bit cadence on every cleared wave — does not interrupt music.
+      if (this.audioManager) {
+        this.audioManager.playSting('sting_wave_clear');
+      }
     });
 
     // Checkpoint events
@@ -777,7 +812,11 @@ export class GameScene extends Phaser.Scene {
       
       // Update UI, play level music, etc.
       if (this.audioManager) {
-        this.audioManager.playMusicWithContext(this.getLevelMusicTrack(this.currentLevelIndex), MusicContext.GAMEPLAY, true);
+        this.audioManager.playMusicWithContext(
+          this.getSceneGameplayTrack(),
+          MusicContext.GAMEPLAY,
+          true
+        );
       }
     });
 
@@ -788,6 +827,13 @@ export class GameScene extends Phaser.Scene {
     this.events.on('levelEndReached', () => {
       if (this.levelCompleteTriggered) return; // already handling or handled
       this.levelCompleteTriggered = true;
+
+      // Play the universal level-clear jingle once. It runs in parallel with
+      // the fade-out so the transition does not feel sluggish; the gameplay
+      // track is already faded by the time the next scene starts.
+      if (this.audioManager) {
+        this.audioManager.playSting('sting_level_clear');
+      }
 
       // Fade to black before the level transition
       this.cameras.main.fadeOut(400, 0, 0, 0);
@@ -1024,7 +1070,10 @@ export class GameScene extends Phaser.Scene {
 
   private setupCombatEffects() {
     // ── Special / signature moves ─────────────────────────────────────────────
-    this.events.on('specialMovePerformed', (data: { x: number; y: number; characterType: string }) => {
+    this.events.on('specialMovePerformed', (data: { x: number; y: number; characterType: string; moveName?: string }) => {
+      // Dramatic hit-stop: freeze the world for 80ms so the move feels weighty
+      this.visualEffects.hitStop(80, 0.1);
+
       this.visualEffects.createSpecialMoveFlash(data.x, data.y, data.characterType);
 
       // Character-specific flash colours
@@ -1034,18 +1083,80 @@ export class GameScene extends Phaser.Scene {
       };
       const color = colors[data.characterType] ?? 0x00ffff;
       if (data.x && data.y) {
-        this.visualEffects.flashSpecialMove(data.x, data.y, color);
+        // Brighter screen flash — bypass the internal 60 % reduction
+        this.visualEffects.createFlashEffect(data.x, data.y, color, 0.55, 120);
         this.visualEffects.createSpecialMoveExplosion(data.x, data.y, color, 'medium');
         this.visualEffects.screenShakeMedium(250);
       } else {
-        this.visualEffects.flashScreen(0x00ffff, 80, 0.3);
+        this.visualEffects.createFlashEffect(0, 0, 0x00ffff, 0.4, 120);
         this.visualEffects.screenShakeMedium(200);
+      }
+
+      // Move name popup — floats up from the character and fades out
+      if (data.moveName) {
+        const { width, height } = this.cameras.main;
+        const screenX = Phaser.Math.Clamp(data.x - this.cameras.main.scrollX, 80, width - 80);
+        const screenY = Phaser.Math.Clamp(data.y - this.cameras.main.scrollY - 60, 20, height - 40);
+        const nameText = this.add.text(screenX, screenY, data.moveName.toUpperCase(), {
+          fontFamily: '"Press Start 2P", monospace',
+          fontSize: '13px',
+          color: `#${color.toString(16).padStart(6, '0')}`,
+          stroke: '#000000',
+          strokeThickness: 4,
+        }).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(1500).setAlpha(0);
+
+        this.tweens.add({
+          targets: nameText,
+          alpha: 1,
+          y: screenY - 10,
+          duration: 120,
+          ease: 'Power2',
+          onComplete: () => {
+            this.tweens.add({
+              targets: nameText,
+              alpha: 0,
+              y: screenY - 40,
+              duration: 500,
+              delay: 400,
+              ease: 'Power2',
+              onComplete: () => nameText.destroy()
+            });
+          }
+        });
       }
     });
 
     this.events.on('signatureMovePerformed', () => {
       this.visualEffects.flashScreen(0xffff00, 100, 0.4);
       this.visualEffects.screenShakeHeavy(250);
+    });
+
+    // ── Weapon throw trail ────────────────────────────────────────────────────
+    this.events.on('weaponThrown', (data: { sprite: Phaser.Physics.Arcade.Sprite }) => {
+      const weaponSprite = data.sprite;
+      if (!weaponSprite || !weaponSprite.active) return;
+
+      // Spawn a small trail dot every 60 ms for 360 ms (6 dots total)
+      const trailTimer = this.time.addEvent({
+        delay: 60,
+        repeat: 5,
+        callback: () => {
+          if (!weaponSprite.active) {
+            trailTimer.destroy();
+            return;
+          }
+          const dot = this.add.circle(weaponSprite.x, weaponSprite.y, 3, 0xffffff, 0.6)
+            .setDepth(997);
+          this.tweens.add({
+            targets: dot,
+            alpha: 0,
+            scale: 0,
+            duration: 200,
+            ease: 'Power2',
+            onComplete: () => dot.destroy()
+          });
+        }
+      });
     });
 
     // ── Landing ───────────────────────────────────────────────────────────────
@@ -1693,6 +1804,37 @@ export class GameScene extends Phaser.Scene {
         finalScore,
         comboMultiplier > 1.0
       );
+
+      // When a combo multiplier is active, briefly show the combo count label
+      if (comboMultiplier >= 1.2) {
+        const maxCombo = Math.max(...Array.from(this.currentComboCounts.values()));
+        const comboLabel = this.add.text(entity.sprite.x, entity.sprite.y - 60, `${maxCombo}x COMBO!`, {
+          fontFamily: '"Press Start 2P", monospace',
+          fontSize: '10px',
+          color: '#ffcc00',
+          stroke: '#000000',
+          strokeThickness: 3,
+        }).setOrigin(0.5, 0.5).setDepth(1001).setAlpha(0);
+
+        this.tweens.add({
+          targets: comboLabel,
+          alpha: 1,
+          y: entity.sprite.y - 75,
+          duration: 150,
+          ease: 'Power2',
+          onComplete: () => {
+            this.tweens.add({
+              targets: comboLabel,
+              alpha: 0,
+              y: entity.sprite.y - 100,
+              duration: 600,
+              delay: 300,
+              ease: 'Power2',
+              onComplete: () => comboLabel.destroy()
+            });
+          }
+        });
+      }
     }
   }
 
@@ -1828,6 +1970,9 @@ export class GameScene extends Phaser.Scene {
       const sceneMapTyped = sceneMap as { level: number; room: number; name: string };
       if (sceneMapTyped.level === levelNum && sceneMapTyped.room === roomNum) {
             const sceneNumber = parseInt(sceneNumStr, 10);
+            // Keep music routing in sync with story scene number so subsequent
+            // boss/gameplay/victory lookups via getMusicForScene resolve correctly.
+            this.currentSceneNumber = sceneNumber;
             if (this.cutsceneTriggerSystem.getSceneNumber() !== sceneNumber) {
               this.cutsceneTriggerSystem.setSceneNumber(sceneNumber);
               
@@ -2028,7 +2173,11 @@ export class GameScene extends Phaser.Scene {
       // Play level complete sound then switch to next level's music
       if (this.audioManager) {
         this.audioManager.playSound('levelAdvance');
-        this.audioManager.playMusicWithContext(this.getLevelMusicTrack(nextLevelIndex), MusicContext.GAMEPLAY, true);
+        this.audioManager.playMusicWithContext(
+          this.getSceneGameplayTrack(),
+          MusicContext.GAMEPLAY,
+          true
+        );
       }
       
       // Clean up current level entities
@@ -2082,11 +2231,36 @@ export class GameScene extends Phaser.Scene {
   /**
    * Map a 0-based level index to the music track key for that level.
    * Level 3 reuses the level2 track since no dedicated asset exists yet.
+   * Retained as a fallback when scene-based routing returns no key.
    */
   private getLevelMusicTrack(levelIndex: number): string {
     const tracks = ['level1', 'level2', 'level2'];
     return tracks[levelIndex] ?? 'level1';
   }
+
+  /**
+   * Resolve the gameplay music key for the current story scene, falling back
+   * to the per-level track when SceneMusicMap has no entry.
+   */
+  private getSceneGameplayTrack(): string {
+    return (
+      getMusicForScene(this.currentSceneNumber, 'gameplay') ??
+      this.getLevelMusicTrack(this.currentLevelIndex)
+    );
+  }
+
+  /**
+   * Resolve the character-specific win sting key for the currently selected
+   * player-1 character. Phase 1 has no character-win assets, so this is a
+   * forward-looking helper — callers must check this.cache.audio.exists()
+   * before playing.
+   */
+  private getCharacterWinStingKey(): string | undefined {
+    const character = this.data.get('player1Character') as string | undefined;
+    if (!character) return undefined;
+    return `sting_character_win_${character.toLowerCase()}`;
+  }
+
 
   /**
    * Display an arcade-style level title card ("STAGE X — LEVEL NAME") that
@@ -2392,6 +2566,7 @@ export class GameScene extends Phaser.Scene {
     this.events.off('wallBounce');
     this.events.off('multiEnemyThrow');
     this.events.off('weaponPickedUp');
+    this.events.off('weaponThrown');
     this.events.off('spawnStatsUpdated');
 
     // Story events (handled by story systems, but clean up if needed)
