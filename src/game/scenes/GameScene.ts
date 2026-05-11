@@ -668,10 +668,26 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
+    // Boss entrance cinematic — freeze/unfreeze player input
+    this.events.on('bossEntranceStart', () => {
+      if (this.playerUpdateManager) {
+        this.playerUpdateManager.setInputFrozen(true);
+      }
+    });
+    this.events.on('bossEntranceEnd', () => {
+      if (this.playerUpdateManager) {
+        this.playerUpdateManager.setInputFrozen(false);
+      }
+    });
+
     // Listen for boss defeat — emit levelEndReached which the guarded transition
     // handler will pick up (it prevents double-firing via levelCompleteTriggered).
     this.events.on('bossDefeated', (data: { boss: Boss; bossType: string }) => {
       console.log(`[GameScene] Boss defeated: ${data.bossType}`);
+      // If there is a sequential boss queued for this level, spawn it instead of ending
+      if (this.levelManager && this.levelManager.activateNextBoss()) {
+        return;
+      }
       this.events.emit('levelEndReached');
     });
 
@@ -874,10 +890,23 @@ export class GameScene extends Phaser.Scene {
     
     // Listen for weapon pickup events
     this.events.on('weaponPickedUp', () => {
+      this.audioManager.playSound('weaponHit', 0.5);
       // Update spawn stats
       if (this.spawnTracker) {
         this.events.emit('spawnStatsUpdated', this.getSpawnStats());
       }
+    });
+
+    this.events.on('grabPerformed', () => {
+      this.audioManager.playSound('grab', 0.7);
+    });
+
+    this.events.on('throwAudio', (data: { isSlam: boolean }) => {
+      this.audioManager.playSound('throw', data.isSlam ? 0.9 : 0.6);
+    });
+
+    this.events.on('dashPerformed', () => {
+      this.audioManager.playSound('jump', 0.35);
     });
     
     // Listen for spawn stats updates (for UI display or debugging)
@@ -1039,6 +1068,9 @@ export class GameScene extends Phaser.Scene {
 
     // ── Throw ─────────────────────────────────────────────────────────────────
     this.events.on('throwPerformed', (data?: { x?: number; y?: number; isSlam?: boolean }) => {
+      if (data?.isSlam) {
+        this.audioManager.playSound('knockdown', 0.8);
+      }
       if (data?.x && data?.y) {
         if (data.isSlam) {
           this.visualEffects.createImpactEffect(data.x, data.y, true);
@@ -2108,6 +2140,11 @@ export class GameScene extends Phaser.Scene {
     // Reset initialization flag
     this.isInitialized = false;
 
+    // Ensure player input is never stuck frozen across scene restarts
+    if (this.playerUpdateManager) {
+      this.playerUpdateManager.setInputFrozen(false);
+    }
+
     // Stop mobile controls overlay if it was launched
     if (this.scene.isActive('MobileControlsScene')) {
       this.scene.stop('MobileControlsScene');
@@ -2189,6 +2226,8 @@ export class GameScene extends Phaser.Scene {
     this.events.off('levelTransitionComplete');
     this.events.off('entityDefeated');
     this.events.off('bossDefeated');
+    this.events.off('bossEntranceStart');
+    this.events.off('bossEntranceEnd');
     this.events.off('weaponSpawned');
     this.events.off('itemSpawned');
     this.events.off('waveStarted');
@@ -2237,6 +2276,20 @@ export class GameScene extends Phaser.Scene {
     this.events.off('musicEnabledChanged');
     this.events.off('sfxEnabledChanged');
     
+    // Combat VFX events (were missing from cleanup — caused doubling on scene restart)
+    this.events.off('characterLanded');
+    this.events.off('vaultPerformed');
+    this.events.off('vaultAttack');
+    this.events.off('parrySuccessful');
+    this.events.off('counterAttackPerformed');
+    this.events.off('airComboHit');
+    this.events.off('airThrowPerformed');
+    this.events.off('weaponComboHit');
+    this.events.off('wallBounce');
+    this.events.off('multiEnemyThrow');
+    this.events.off('weaponPickedUp');
+    this.events.off('spawnStatsUpdated');
+
     // Story events (handled by story systems, but clean up if needed)
     this.events.off('cutsceneEnded');
   }

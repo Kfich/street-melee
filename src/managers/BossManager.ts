@@ -6,8 +6,6 @@ import { BossHealthBar } from '../ui/BossHealthBar';
 import { DialogueSystem } from '../systems/story/DialogueSystem';
 import { StoryManager } from '../systems/story/StoryManager';
 import { LevelManager } from '../systems/level/LevelManager';
-import { GameConfig } from '../config/GameConfig';
-
 /**
  * Manages boss spawning, updates, and cleanup
  */
@@ -59,6 +57,17 @@ export class BossManager {
     });
   }
 
+  /** Display name shown on the entrance title card for each boss type */
+  private static readonly BOSS_DISPLAY_NAMES: Record<string, string> = {
+    blizz: 'BLIZZ',
+    benny: 'BENNY',
+    principle: 'THE PRINCIPAL',
+    midnight: 'MIDNIGHT',
+    angela: 'ANGELA',
+    tony: 'TONY',
+    police: 'POLICE',
+  };
+
   /**
    * Handle boss spawned event
    */
@@ -72,37 +81,156 @@ export class BossManager {
     this.entityManager.add(boss);
     boss.sprite.setData('entity', boss);
     boss.sprite.setData('isBoss', true);
-    
+
     // Set depth for proper rendering (same layer as players/enemies)
-    // Use Y position for depth sorting so lower entities appear in front
     boss.sprite.setDepth(boss.sprite.y);
-    
+
     // Set up ground collision
     this.scene.physics.add.collider(boss.sprite, this.ground);
-    
-    // Show boss health bar (only for combat bosses)
-    const isCombat = boss.sprite.getData('isCombat') !== false; // Default to true if not set
-    if (isCombat && this.bossHealthBar) {
-      // Defer setting boss to ensure scene is fully ready
-      this.scene.time.delayedCall(16, () => {
-        if (this.bossHealthBar && boss) {
-          this.bossHealthBar.setBoss(boss);
-        }
-      });
-    }
-    
-    // Trigger boss dialogue if available (with small delay to ensure boss is fully spawned)
-    if (this.dialogueSystem && this.storyManager) {
-      this.scene.time.delayedCall(GameConfig.INIT_DELAY_LONG, () => {
-        if (this.levelManager) {
-          const levelIndex = this.levelManager.getCurrentLevel() - 1;
-          // Create a flags map for dialogue checking
-          const flags = new Map<string, boolean>();
-          // Check for boss-specific dialogues (they use scene_index matching level + 1)
-          this.dialogueSystem!.checkAndTriggerDialogue(levelIndex + 1, flags);
-        }
-      });
-    }
+
+    // Play entrance cinematic — freeze boss AI and player input while it runs
+    this.playBossEntrance(boss);
+  }
+
+  /**
+   * 2.4-second boss entrance: camera flash → WARNING card → boss name → unfreeze.
+   */
+  private playBossEntrance(boss: Boss): void {
+    const bossType = boss.getBossType();
+    const isCombat = (bossType !== 'angela' && bossType !== 'principle');
+    const displayName = BossManager.BOSS_DISPLAY_NAMES[bossType] ?? bossType.toUpperCase();
+
+    // Freeze the boss so it can't pursue the player during the cinematic
+    boss.sprite.setActive(false);
+
+    // Notify GameScene to freeze player input
+    this.scene.events.emit('bossEntranceStart');
+
+    // ── Camera flash ─────────────────────────────────────────────────
+    this.scene.cameras.main.flash(300, 255, 255, 255);
+
+    // ── Build title card (pinned to camera via scrollFactor=0) ───────
+    const cam = this.scene.cameras.main;
+    const cx = cam.width / 2;
+    const cy = cam.height / 2;
+
+    // Semi-opaque horizontal bar
+    const bar = this.scene.add.graphics();
+    bar.fillStyle(0x000000, 0.85);
+    bar.fillRect(0, cy - 60, cam.width, 120);
+    bar.setScrollFactor(0);
+    bar.setDepth(20000);
+    bar.setAlpha(0);
+
+    // Red top & bottom border lines
+    const borders = this.scene.add.graphics();
+    borders.lineStyle(2, 0xff2222, 1);
+    borders.beginPath();
+    borders.moveTo(0, cy - 60);
+    borders.lineTo(cam.width, cy - 60);
+    borders.moveTo(0, cy + 60);
+    borders.lineTo(cam.width, cy + 60);
+    borders.strokePath();
+    borders.setScrollFactor(0);
+    borders.setDepth(20001);
+    borders.setAlpha(0);
+
+    const fontFamily = '"Press Start 2P", monospace';
+
+    // "WARNING" label
+    const warningText = this.scene.add.text(cx, cy - 28, 'WARNING', {
+      fontFamily,
+      fontSize: '11px',
+      color: '#ef4444',
+      stroke: '#000000',
+      strokeThickness: 3,
+    });
+    warningText.setOrigin(0.5, 0.5);
+    warningText.setScrollFactor(0);
+    warningText.setDepth(20002);
+    warningText.setAlpha(0);
+
+    // Boss name (large)
+    const nameText = this.scene.add.text(cx, cy + 20, displayName, {
+      fontFamily,
+      fontSize: '22px',
+      color: '#ffd700',
+      stroke: '#000000',
+      strokeThickness: 4,
+    });
+    nameText.setOrigin(0.5, 0.5);
+    nameText.setScrollFactor(0);
+    nameText.setDepth(20002);
+    nameText.setAlpha(0);
+    nameText.setScale(0.6);
+
+    const cardObjects = [bar, borders, warningText, nameText];
+
+    const cleanup = () => {
+      cardObjects.forEach(obj => obj.destroy());
+    };
+
+    // Phase 1 (0–400ms): fade in the bar + borders
+    this.scene.tweens.add({
+      targets: [bar, borders],
+      alpha: 1,
+      duration: 250,
+      ease: 'Power2',
+      onComplete: () => {
+        // Phase 2 (400–600ms): flash WARNING 3 times
+        let flashes = 0;
+        this.scene.time.addEvent({
+          delay: 80,
+          repeat: 5,
+          callback: () => {
+            warningText.setAlpha(flashes % 2 === 0 ? 1 : 0);
+            flashes++;
+          }
+        });
+
+        // Phase 3 (600–900ms): scale-in boss name
+        this.scene.time.delayedCall(480, () => {
+          warningText.setAlpha(1);
+          this.scene.tweens.add({
+            targets: nameText,
+            alpha: 1,
+            scaleX: 1,
+            scaleY: 1,
+            duration: 300,
+            ease: 'Back.easeOut',
+          });
+        });
+
+        // Phase 4 (1800–2200ms): hold → fade out everything
+        this.scene.time.delayedCall(1400, () => {
+          this.scene.tweens.add({
+            targets: cardObjects,
+            alpha: 0,
+            duration: 350,
+            ease: 'Power2',
+            onComplete: () => {
+              cleanup();
+              // Unfreeze boss AI
+              if (boss.sprite && boss.sprite.scene) {
+                boss.sprite.setActive(true);
+              }
+              // Unfreeze player input
+              this.scene.events.emit('bossEntranceEnd');
+
+              // Show health bar and trigger dialogue now that entrance is done
+              if (isCombat && this.bossHealthBar) {
+                this.bossHealthBar.setBoss(boss);
+              }
+              if (this.dialogueSystem && this.storyManager && this.levelManager) {
+                const levelIndex = this.levelManager.getCurrentLevel() - 1;
+                const flags = new Map<string, boolean>();
+                this.dialogueSystem.checkAndTriggerDialogue(levelIndex + 1, flags);
+              }
+            }
+          });
+        });
+      }
+    });
   }
 
   /**

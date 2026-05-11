@@ -22,6 +22,7 @@ export class PlayerUpdateManager {
   private playerGroundColliders: Map<Player, Phaser.Physics.Arcade.Collider>;
   private roomManager?: RoomManager;
   private isMultiplayer: boolean;
+  private inputFrozen: boolean = false;
 
   constructor(
     scene: Phaser.Scene,
@@ -48,6 +49,23 @@ export class PlayerUpdateManager {
   }
 
   /**
+   * Freeze or unfreeze all player input (used during boss entrance cutscenes).
+   * When frozen, handleInput receives a zeroed-out input so the character idles.
+   */
+  setInputFrozen(frozen: boolean): void {
+    this.inputFrozen = frozen;
+    if (frozen) {
+      // Immediately zero out velocity so players don't slide
+      this.players.forEach(player => {
+        if (player?.sprite?.body) {
+          const body = player.sprite.body as Phaser.Physics.Arcade.Body;
+          body.setVelocityX(0);
+        }
+      });
+    }
+  }
+
+  /**
    * Update all players - handle input, physics, pickups, etc.
    */
   update(): void {
@@ -56,20 +74,22 @@ export class PlayerUpdateManager {
         return;
       }
 
-      const input = this.inputManager.getPlayerInput(index);
-      
+      const input = this.inputFrozen
+        ? { left: false, right: false, up: false, down: false, jump: false, attack: false, special: false }
+        : this.inputManager.getPlayerInput(index);
+
       // Handle ground collision and physics
       this.handlePlayerPhysics(player, input);
-      
+
       // Process input
       player.handleInput(input);
-      
+
       // Update weapon indicator
       this.updateWeaponIndicator(player, index);
-      
+
       // Send input to multiplayer server if connected
       this.sendMultiplayerInput(input, index);
-      
+
       // Check for weapon/item pickups
       this.checkPickups(player);
     });
