@@ -34,6 +34,11 @@ export class AudioManager {
   private sfxEnabled: boolean = true;
   private soundPool: Map<string, Phaser.Sound.BaseSound[]> = new Map(); // For sound pooling
   private pendingMusicTransition: { context: MusicContext; track: string; loop: boolean } | null = null;
+  // Ducking state — separate from priority arbitration so DIALOGUE / PAUSE
+  // can lower combat music in place instead of swapping the track.
+  private currentMusicBaseVolume: number = 1.0;
+  private isMusicDucked: boolean = false;
+  private pauseAmbientSound: Phaser.Sound.BaseSound | null = null;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
@@ -234,6 +239,14 @@ export class AudioManager {
 
     // Get transition config
     const transition = MUSIC_TRANSITIONS[context];
+
+    // Duck-only contexts (DIALOGUE, PAUSE) never replace the underlying music —
+    // they just lower it so an overlay can sit on top. The caller is responsible
+    // for restoring volume via unduckMusic() when the overlay ends.
+    if (transition.duck && this.currentMusic?.isPlaying) {
+      this.duckMusic(transition.duck.volume, transition.duck.duration);
+      return;
+    }
     
     // Stop current music with transition
     if (this.currentMusic && this.currentMusic.isPlaying && transition.stopPrevious) {
@@ -323,6 +336,8 @@ export class AudioManager {
       this.currentMusic = musicInstance;
       this.currentMusicKey = musicConfig.key;
       this.currentMusicContext = context;
+      this.currentMusicBaseVolume = (musicConfig.volume ?? 1.0) * this.musicVolume;
+      this.isMusicDucked = false;
       
       // Update music state
       this.musicState = {
@@ -557,9 +572,147 @@ export class AudioManager {
   }
 
   /**
+   * Play a one-shot stinger (non-looping victory/level-clear/wave-clear/etc.)
+   * without disturbing the current music context. The instance is destroyed on
+   * complete to avoid GC pressure from repeated stingers.
+   */
+  playSting(
+    key: SoundEffect | string,
+    onComplete?: () => void,
+    volume: number = 1.0
+  ): Phaser.Sound.BaseSound | undefined {
+    if (!this.sfxEnabled) {
+      onComplete?.();
+      return undefined;
+    }
+
+    if (!this.scene.cache.audio.exists(key)) {
+      console.warn(`[AudioManager] Missing sting audio key: ${key}`);
+      onComplete?.();
+      return undefined;
+    }
+
+    const soundConfig = getSoundEffect(key);
+    const finalVolume = (soundConfig?.volume ?? 1.0) * this.sfxVolume * volume;
+
+    try {
+      const sound = this.scene.sound.add(key, { volume: finalVolume, loop: false });
+      sound.once(Phaser.Sound.Events.COMPLETE, () => {
+        sound.destroy();
+        onComplete?.();
+      });
+      sound.play();
+      return sound;
+    } catch (error) {
+      console.warn(`[AudioManager] Failed to play sting ${key}:`, error);
+      onComplete?.();
+      return undefined;
+    }
+  }
+
+  /**
+   * Lower current music volume in place (does not change context). Used by
+   * DIALOGUE / PAUSE overlays so combat music keeps grounding the moment.
+   */
+  duckMusic(volume: number = 0.3, duration: number = 200): void {
+    if (!this.currentMusic || !this.currentMusic.isPlaying) return;
+
+    const music = this.currentMusic as Phaser.Sound.WebAudioSound;
+
+    if (!this.isMusicDucked) {
+      this.currentMusicBaseVolume = music.volume ?? this.currentMusicBaseVolume;
+    }
+
+    this.isMusicDucked = true;
+    this.scene.tweens.killTweensOf(music);
+    this.scene.tweens.add({
+      targets: music,
+      volume,
+      duration,
+      ease: 'Linear'
+    });
+  }
+
+  /**
+   * Restore music volume after a duck overlay (DIALOGUE / PAUSE) ends.
+   */
+  unduckMusic(duration: number = 200): void {
+    if (!this.currentMusic || !this.currentMusic.isPlaying) {
+      this.isMusicDucked = false;
+      return;
+    }
+
+    const music = this.currentMusic as Phaser.Sound.WebAudioSound;
+    this.scene.tweens.killTweensOf(music);
+    this.scene.tweens.add({
+      targets: music,
+      volume: this.currentMusicBaseVolume,
+      duration,
+      ease: 'Linear',
+      onComplete: () => {
+        this.isMusicDucked = false;
+      }
+    });
+  }
+
+  /**
+   * Whether the current music is currently ducked.
+   */
+  isDucked(): boolean {
+    return this.isMusicDucked;
+  }
+
+  /**
+   * Start the soft pause-ambient loop on top of currently-ducked gameplay
+   * music. Idempotent — calling twice keeps a single instance and does NOT
+   * stack multiple loops.
+   */
+  playPauseAmbient(volume: number = 0.25): Phaser.Sound.BaseSound | null {
+    if (!this.musicEnabled) return null;
+    if (this.pauseAmbientSound && (this.pauseAmbientSound as any).isPlaying) {
+      return this.pauseAmbientSound;
+    }
+
+    const config = getMusicTrack('pause_ambient');
+    if (!config || !this.scene.cache.audio.exists(config.key)) {
+      console.warn('[AudioManager] pause_ambient not loaded; pause will only duck.');
+      return null;
+    }
+
+    try {
+      const sound = this.scene.sound.add(config.key, {
+        loop: true,
+        volume: (config.volume ?? 1.0) * this.musicVolume * volume
+      });
+      sound.play();
+      this.pauseAmbientSound = sound;
+      return sound;
+    } catch (error) {
+      console.warn('[AudioManager] Failed to play pause_ambient:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Stop the pause-ambient loop. Safe to call when nothing is playing.
+   */
+  stopPauseAmbient(): void {
+    if (!this.pauseAmbientSound) return;
+    try {
+      this.pauseAmbientSound.stop();
+      this.pauseAmbientSound.destroy();
+    } catch (error) {
+      console.warn('[AudioManager] Failed to stop pause_ambient:', error);
+    } finally {
+      this.pauseAmbientSound = null;
+    }
+  }
+
+  /**
    * Clean up audio resources
    */
   destroy(): void {
+    this.stopPauseAmbient();
     this.stopMusic();
     this.soundEffects.clear();
     this.soundPool.clear();

@@ -6,13 +6,32 @@
 export interface SoundEffectConfig {
   key: string;
   path: string;
+  /** Optional alternate-format fallback path (e.g. .mp3 when path is .ogg). */
+  fallbackPath?: string;
   volume?: number; // Optional default volume (0-1)
 }
 
 export interface MusicTrackConfig {
   key: string;
   path: string;
+  /** Optional alternate-format fallback path (e.g. .mp3 when path is .ogg). */
+  fallbackPath?: string;
   volume?: number; // Optional default volume (0-1)
+  /** Phase 2 stem layering hook — not used by Phase 1. */
+  stems?: {
+    drums: string;
+    bass: string;
+    lead: string;
+    leadIntense?: string;
+  };
+  /** Loop start sample, for assets that ship explicit loop points. */
+  loopStart?: number;
+  /** Loop end sample, for assets that ship explicit loop points. */
+  loopEnd?: number;
+  /** Track BPM (informational; used for future tempo-matched transitions). */
+  bpm?: number;
+  /** Whether this track is intended to loop. Defaults to true at play sites. */
+  loop?: boolean;
 }
 
 /**
@@ -157,6 +176,32 @@ export const SOUND_EFFECTS: Record<string, SoundEffectConfig> = {
     key: 'prisonSiren',
     path: 'assets/sounds/prison-siren.mp3',
     volume: 0.5
+  },
+
+  // Phase 1 stingers (OGG primary + MP3 fallback)
+  sting_wave_clear: {
+    key: 'sting_wave_clear',
+    path: 'assets/sounds/stingers/sting_wave_clear.ogg',
+    fallbackPath: 'assets/sounds/stingers/sting_wave_clear.mp3',
+    volume: 0.9
+  },
+  sting_boss_defeat: {
+    key: 'sting_boss_defeat',
+    path: 'assets/sounds/stingers/sting_boss_defeat.ogg',
+    fallbackPath: 'assets/sounds/stingers/sting_boss_defeat.mp3',
+    volume: 0.95
+  },
+  sting_level_clear: {
+    key: 'sting_level_clear',
+    path: 'assets/sounds/stingers/sting_level_clear.ogg',
+    fallbackPath: 'assets/sounds/stingers/sting_level_clear.mp3',
+    volume: 0.95
+  },
+  sting_menu_confirm: {
+    key: 'sting_menu_confirm',
+    path: 'assets/sounds/stingers/sting_menu_confirm.ogg',
+    fallbackPath: 'assets/sounds/stingers/sting_menu_confirm.mp3',
+    volume: 0.8
   }
 };
 
@@ -194,6 +239,28 @@ export const MUSIC_TRACKS: Record<string, MusicTrackConfig> = {
     key: 'dialogue',
     path: 'assets/music/8-bit-dialogue-song.mp3',
     volume: 0.4
+  },
+
+  // Phase 1 UI loops (OGG primary + MP3 fallback)
+  menu_character_select: {
+    key: 'menu_character_select',
+    path: 'assets/music/ui/menu_character_select.ogg',
+    fallbackPath: 'assets/music/ui/menu_character_select.mp3',
+    volume: 0.75,
+    bpm: 120,
+    loop: true,
+    loopStart: 0,
+    loopEnd: 2116800
+  },
+  pause_ambient: {
+    key: 'pause_ambient',
+    path: 'assets/music/ui/pause_ambient.ogg',
+    fallbackPath: 'assets/music/ui/pause_ambient.mp3',
+    volume: 0.35,
+    bpm: 80,
+    loop: true,
+    loopStart: 0,
+    loopEnd: 1323000
   }
 };
 
