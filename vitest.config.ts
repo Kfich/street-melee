@@ -21,7 +21,11 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src')
+      '@': path.resolve(__dirname, './src'),
+      // Redirect all `import Phaser from 'phaser'` in source files to a
+      // lightweight stub. The real Phaser loads WebGL/canvas code at module
+      // init time which crashes in the jsdom test environment.
+      'phaser': path.resolve(__dirname, './tests/__mocks__/phaser.ts'),
     }
   }
 });

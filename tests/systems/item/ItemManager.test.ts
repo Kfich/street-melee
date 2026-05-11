@@ -12,7 +12,9 @@ describe('ItemManager', () => {
     
     mockCharacter = {
       sprite: { x: 100, y: 200 },
-      takeDamage: vi.fn()
+      takeDamage: vi.fn(),
+      getHealth: vi.fn(() => 80),
+      getMaxHealth: vi.fn(() => 100),
     };
   });
 

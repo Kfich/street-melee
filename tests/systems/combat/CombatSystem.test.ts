@@ -14,28 +14,21 @@ describe('CombatSystem', () => {
     mockScene = new (global.Phaser as any).Scene();
     combatSystem = new CombatSystem(mockScene);
     
-    // Create mock entities
-    mockEntity1 = {
-      sprite: {
-        x: 100,
-        y: 200,
-        body: { velocity: { x: 0, y: 0 } },
-        flipX: false
-      },
-      takeDamage: vi.fn(),
-      getState: vi.fn(() => 'idle'),
-      setState: vi.fn(),
-      getHealth: vi.fn(() => 100),
-      isAlive: vi.fn(() => true)
+    // Create mock entities — sprite must have active:true and a scene reference
+    // so CombatSystem's guards don't bail before applying damage/knockback.
+    const makeEntitySprite = (x: number) => {
+      const vel = { x: 0, y: 0 };
+      const body = {
+        velocity: vel,
+        setVelocityX: vi.fn((v: number) => { vel.x = v; }),
+        setVelocityY: vi.fn((v: number) => { vel.y = v; }),
+        setVelocity: vi.fn((vx: number, vy: number) => { vel.x = vx; vel.y = vy; }),
+      };
+      return { x, y: 200, active: true, flipX: false, body, scene: mockScene, getData: vi.fn() };
     };
-    
-    mockEntity2 = {
-      sprite: {
-        x: 150,
-        y: 200,
-        body: { velocity: { x: 0, y: 0 } },
-        flipX: false
-      },
+
+    mockEntity1 = {
+      sprite: makeEntitySprite(100),
       takeDamage: vi.fn(),
       getState: vi.fn(() => 'idle'),
       setState: vi.fn(),
@@ -43,13 +36,17 @@ describe('CombatSystem', () => {
       isAlive: vi.fn(() => true)
     };
 
-    // Create mock hitbox
-    const mockOwner = {
-      x: 100,
-      y: 200,
-      flipX: false,
-      body: {}
+    mockEntity2 = {
+      sprite: makeEntitySprite(150),
+      takeDamage: vi.fn(),
+      getState: vi.fn(() => 'idle'),
+      setState: vi.fn(),
+      getHealth: vi.fn(() => 100),
+      isAlive: vi.fn(() => true)
     };
+
+    // Create mock hitbox — owner needs active:true and getData so applyDamage doesn't bail
+    const mockOwner = { x: 100, y: 200, flipX: false, body: {}, active: true, getData: vi.fn(() => undefined) };
     mockHitbox = new Hitbox(mockOwner as any, 20, -10, 30, 40, 20, { x: 150, y: 0 }, false);
   });
 

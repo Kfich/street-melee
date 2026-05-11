@@ -93,8 +93,9 @@ describe('ComboSystem', () => {
 
     it('should have knockdown on final combo hit', () => {
       comboSystem.startCombo(0, 'axel');
-      // Progress through combo
-      for (let i = 0; i < 4; i++) {
+      // Axel has 5 moves (0-4). startCombo returns move 0; advance to move 3
+      // so the next continueCombo call lands on move 4 (High Kick, isKnockdown).
+      for (let i = 0; i < 3; i++) {
         comboSystem.continueCombo(0);
       }
       const finalMove = comboSystem.continueCombo(0);

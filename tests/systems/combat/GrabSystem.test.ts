@@ -21,7 +21,11 @@ describe('GrabSystem', () => {
     };
     
     mockTarget = {
-      sprite: { x: 120, y: 200, body: { setVelocity: vi.fn() } },
+      sprite: {
+        x: 120, y: 200, active: true,
+        setPosition: vi.fn(), setTint: vi.fn(), clearTint: vi.fn(), setScale: vi.fn(),
+        body: { setVelocity: vi.fn(), setVelocityX: vi.fn(), setVelocityY: vi.fn() },
+      },
       getState: vi.fn(() => 'idle'),
       setState: vi.fn(),
       takeDamage: vi.fn(),
