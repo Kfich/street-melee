@@ -99,6 +99,8 @@ export class GameScene extends Phaser.Scene {
   private lowHealthTween?: Phaser.Tweens.Tween;
   // Off-screen enemy direction indicators
   private offScreenArrows!: Phaser.GameObjects.Graphics;
+  // Combo bonus multiplier overlay (shown while a combo is active)
+  private comboBonusText?: Phaser.GameObjects.Text;
   // Run-stats tracking for the victory screen
   private enemyKillCount: number = 0;
   private maxComboReached: number = 0;
@@ -814,6 +816,7 @@ export class GameScene extends Phaser.Scene {
       if (this.audioManager) {
         this.audioManager.playSting('sting_wave_clear');
       }
+      this.showCheckpointNotification();
     });
 
     // Level progression
@@ -1077,6 +1080,12 @@ export class GameScene extends Phaser.Scene {
         this.comboCounters[playerIndex].updateCombo(newCount);
       }
 
+      // Show combo bonus multiplier (kicks in at 3+ hits, +10% per hit above 2)
+      if (newCount >= 3) {
+        const pct = Math.round((newCount - 2) * 10);
+        this.showComboBonusText(`+${pct}% BONUS`);
+      }
+
       // Reset combo after delay if no more hits
       this.time.delayedCall(GameConfig.COMBO_RESET_DELAY, () => {
         const latestCount = this.currentComboCounts.get(playerIndex);
@@ -1086,6 +1095,7 @@ export class GameScene extends Phaser.Scene {
           if (this.comboCounters[playerIndex]) {
             this.comboCounters[playerIndex].hide();
           }
+          this.hideComboBonusText();
         }
       });
     });
@@ -1095,6 +1105,7 @@ export class GameScene extends Phaser.Scene {
       if (this.comboCounters[playerIndex]) {
         this.comboCounters[playerIndex].hide();
       }
+      this.hideComboBonusText();
     });
   }
 
@@ -2632,6 +2643,71 @@ export class GameScene extends Phaser.Scene {
       // Thin white border for readability
       this.offScreenArrows.lineStyle(1.5, 0xffffff, 0.6);
       this.offScreenArrows.strokeTriangle(tipX, tipY, blX, blY, brX, brY);
+    });
+  }
+
+  /** "CHECKPOINT SAVED" notification card. */
+  private showCheckpointNotification(): void {
+    const { width, height } = this.cameras.main;
+
+    const bar = this.add.rectangle(width / 2, height * 0.18, width * 0.55, 44, 0x000000, 0.72)
+      .setScrollFactor(0).setDepth(1002).setAlpha(0);
+
+    const text = this.add.text(width / 2, height * 0.18, 'CHECKPOINT SAVED', {
+      fontFamily: '"Press Start 2P", monospace',
+      fontSize: '12px',
+      color: '#44ff88',
+      stroke: '#000000',
+      strokeThickness: 3,
+    }).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(1003).setAlpha(0);
+
+    this.tweens.add({
+      targets: [bar, text],
+      alpha: 1,
+      duration: 200,
+      ease: 'Linear',
+      onComplete: () => {
+        this.time.delayedCall(1200, () => {
+          this.tweens.add({
+            targets: [bar, text],
+            alpha: 0,
+            duration: 350,
+            ease: 'Linear',
+            onComplete: () => { bar.destroy(); text.destroy(); },
+          });
+        });
+      },
+    });
+  }
+
+  /**
+   * Show/update the combo bonus percentage label above the combo counter.
+   * Re-uses the same Text object rather than creating a new one each hit.
+   */
+  private showComboBonusText(label: string): void {
+    const { width } = this.cameras.main;
+
+    if (!this.comboBonusText || !this.comboBonusText.active) {
+      this.comboBonusText = this.add.text(width / 2, 68, label, {
+        fontFamily: '"Press Start 2P", monospace',
+        fontSize: '9px',
+        color: '#ffaa00',
+        stroke: '#000000',
+        strokeThickness: 2,
+      }).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(1004).setAlpha(0);
+    }
+
+    this.tweens.killTweensOf(this.comboBonusText);
+    this.comboBonusText.setText(label).setAlpha(1);
+  }
+
+  private hideComboBonusText(): void {
+    if (!this.comboBonusText?.active) return;
+    this.tweens.add({
+      targets: this.comboBonusText,
+      alpha: 0,
+      duration: 250,
+      ease: 'Linear',
     });
   }
 

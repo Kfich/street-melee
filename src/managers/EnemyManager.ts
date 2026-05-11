@@ -59,6 +59,19 @@ export class EnemyManager {
         this.handleEnemyDefeated(entity as Enemy);
       }
     });
+
+    // Hit stagger: briefly interrupt enemy AI when they take a non-lethal hit
+    this.scene.events.on('entityHitReaction', (data: { entity: any; damage: number }) => {
+      if (!data.entity?.sprite?.getData) return;
+      if (!data.entity.sprite.getData('isEnemy')) return;
+      const enemy = data.entity.sprite.getData('entity') as Enemy;
+      if (!enemy) return;
+      // Knock back away from nearest player
+      const players = (this.scene as any).players as Array<{ sprite: { x: number } }> | undefined;
+      const nearestPlayerX = players?.[0]?.sprite.x ?? 0;
+      const dir = enemy.sprite.x >= nearestPlayerX ? 1 : -1;
+      enemy.stagger(dir);
+    });
   }
 
   /**

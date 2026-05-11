@@ -370,6 +370,9 @@ export class Enemy extends BaseEntity {
   }
 
   private updateAI() {
+    // Skip AI while staggering from a hit
+    if (this.aiState === 'hit') return;
+
     // Find nearest player
     this.findTarget();
 
@@ -620,6 +623,26 @@ export class Enemy extends BaseEntity {
     this.roomWidth = width;
     // Update patrol distance to 80% of room width
     this.patrolDistance = Math.floor(this.roomWidth * 0.8);
+  }
+
+  /**
+   * Briefly interrupt AI with a knockback push (hit-stagger).
+   * The enemy's velocity is pushed in `dir` (±1 = right/left) and AI is
+   * paused for ~260 ms.  Has no effect while dying or knocked down.
+   */
+  stagger(dir: number): void {
+    const state = this.getState();
+    if (state === 'dying' || state === 'knockedDown') return;
+
+    this.aiState = 'hit';
+    const body = this.sprite.body as Phaser.Physics.Arcade.Body;
+    if (body) {
+      body.setVelocityX(dir * 130);
+    }
+
+    this.scene.time.delayedCall(260, () => {
+      if (this.aiState === 'hit') this.aiState = 'pursue';
+    });
   }
 
   /**

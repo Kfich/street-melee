@@ -15,6 +15,7 @@ export interface BossStats {
   attackCooldown: number;
   canAttack: boolean; // Whether this boss can attack
   spriteKey: string; // Base sprite key for this boss
+  isRanged?: boolean; // Fires projectiles instead of melee
 }
 
 export interface BossPhase {
@@ -83,6 +84,7 @@ export const BOSS_STATS: Record<BossType, BossStats> = {
     detectionRange: 500,
     attackCooldown: 1200, // Shoots every 1.2 seconds (72 frames)
     canAttack: true,
+    isRanged: true,
     spriteKey: 'tony'
   },
   police: {
@@ -93,6 +95,7 @@ export const BOSS_STATS: Record<BossType, BossStats> = {
     detectionRange: 400,
     attackCooldown: 1500, // Burst fire pattern
     canAttack: true,
+    isRanged: true,
     spriteKey: 'police'
   }
 };
@@ -112,6 +115,8 @@ export class Boss extends BaseEntity {
   private lastAttackPattern: string = '';
   private attackPatternCooldown: number = 0;
   private invincibilityFrames: number = 0;
+  // Active projectiles — cleaned up on defeat/destroy
+  private projectiles: Phaser.GameObjects.Image[] = [];
 
   constructor(scene: Phaser.Scene, x: number, y: number, bossType: BossType) {
     const stats = BOSS_STATS[bossType];
@@ -442,17 +447,33 @@ export class Boss extends BaseEntity {
 
     switch (this.aiState) {
       case 'idle':
-      case 'pursue':
+      case 'pursue': {
         // Update facing direction to face the target
         const dx = this.target.sprite.x - this.sprite.x;
         this.facingRight = dx > 0;
-        
-        if (distance <= this.stats.attackRange && this.attackCooldown <= 0) {
-          this.performAttack();
-        } else if (distance <= this.stats.detectionRange) {
-          this.pursueTarget(effectiveSpeed);
+
+        if (this.stats.isRanged) {
+          // Ranged bosses: back away if player closes to melee range, attack if in optimal range
+          const minRange = 120; // don't let player get this close
+          if (distance < minRange) {
+            // Back pedal away from the player
+            const body = this.sprite.body as Phaser.Physics.Arcade.Body;
+            body.setVelocityX(dx > 0 ? -effectiveSpeed * 0.8 : effectiveSpeed * 0.8);
+            this.aiState = 'pursue';
+          } else if (distance <= this.stats.attackRange && this.attackCooldown <= 0) {
+            this.performAttack();
+          } else if (distance <= this.stats.detectionRange) {
+            this.pursueTarget(effectiveSpeed);
+          }
+        } else {
+          if (distance <= this.stats.attackRange && this.attackCooldown <= 0) {
+            this.performAttack();
+          } else if (distance <= this.stats.detectionRange) {
+            this.pursueTarget(effectiveSpeed);
+          }
         }
         break;
+      }
 
       case 'attack':
         // Attack state is handled by attack patterns
@@ -544,6 +565,14 @@ export class Boss extends BaseEntity {
   private performAttack(): void {
     if (this.attackCooldown > 0 || !this.target) return;
 
+    // Ranged bosses (tony / police) always shoot — skip melee pattern logic
+    if (this.stats.isRanged) {
+      this.rangedAttack();
+      this.attackCooldown = this.stats.attackCooldown;
+      this.aiState = 'attack';
+      return;
+    }
+
     const currentPhase = this.phases[this.currentPhase];
     const availablePatterns = currentPhase.attackPatterns.filter(
       pattern => pattern !== this.lastAttackPattern || this.attackPatternCooldown <= 0
@@ -601,6 +630,140 @@ export class Boss extends BaseEntity {
 
     this.attackCooldown = this.stats.attackCooldown;
     this.aiState = 'attack';
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Ranged attack system (Tony = ice shard, Police = taser bolt)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Ensure a small procedural texture for projectiles exists.
+   * Called once per type; subsequent calls are no-ops.
+   */
+  private ensureProjectileTex(key: string, color: number, diamond: boolean): void {
+    if (this.scene.textures.exists(key)) return;
+    const size = diamond ? 14 : 10;
+    const gfx = this.scene.make.graphics({});
+    gfx.fillStyle(color, 1);
+    if (diamond) {
+      gfx.fillTriangle(size / 2, 0, size, size / 2, size / 2, size);
+      gfx.fillTriangle(size / 2, 0, 0, size / 2, size / 2, size);
+    } else {
+      gfx.fillStyle(color, 0.9);
+      gfx.fillEllipse(size / 2, size / 2, size, size * 0.6);
+    }
+    gfx.generateTexture(key, size, size);
+    gfx.destroy();
+  }
+
+  /**
+   * Fire one projectile toward the target.
+   * In phase 2 fires two, in phase 3 fires three (burst spread).
+   */
+  private rangedAttack(): void {
+    if (!this.target || !this.sprite.active) return;
+
+    const phase = this.phases[this.currentPhase];
+    const damage = this.stats.damage * phase.damageMultiplier;
+
+    const isTony = this.bossType === 'tony';
+    const texKey = `proj_${this.bossType}`;
+    const color = isTony ? 0x88eeff : 0xffee22;
+    this.ensureProjectileTex(texKey, color, isTony);
+
+    // How many shots per attack burst (scales with phase)
+    const shotCount = this.currentPhase === 0 ? 1 : this.currentPhase === 1 ? 2 : 3;
+    const spreadDeg = shotCount > 1 ? 12 : 0; // degrees between shots
+
+    for (let i = 0; i < shotCount; i++) {
+      // Slight delay between burst shots
+      this.scene.time.delayedCall(i * 120, () => {
+        if (!this.sprite || !this.sprite.active) return;
+        this.fireProjectile(texKey, color, damage, spreadDeg * (i - (shotCount - 1) / 2));
+      });
+    }
+
+    // Visual "shoot" tint flash
+    this.sprite.setTint(isTony ? 0xaaeeff : 0xffff88);
+    this.scene.time.delayedCall(100, () => { if (this.sprite?.active) this.sprite.clearTint(); });
+  }
+
+  /**
+   * Spawn and move a single projectile, destroying it on player hit or timeout.
+   */
+  private fireProjectile(texKey: string, glowColor: number, damage: number, spreadDegrees: number): void {
+    if (!this.target || !this.sprite.active) return;
+
+    const startX = this.sprite.x + (this.facingRight ? 30 : -30);
+    const startY = this.sprite.y - 40;
+
+    const proj = this.scene.physics.add.image(startX, startY, texKey);
+    proj.setDepth(this.sprite.depth + 5);
+    proj.setData('fromBoss', true);
+
+    // Direction toward target with optional spread
+    const baseAngle = Phaser.Math.Angle.Between(startX, startY, this.target.sprite.x, this.target.sprite.y - 30);
+    const angle = baseAngle + Phaser.Math.DegToRad(spreadDegrees);
+    const speed = 300;
+    const body = proj.body as Phaser.Physics.Arcade.Body;
+    body.setGravityY(-300); // Override world gravity so it flies straight
+    body.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed * 0.3);
+    proj.setAngle(Phaser.Math.RadToDeg(angle));
+
+    this.projectiles.push(proj);
+
+    // Per-frame hit check using scene update event
+    const checkHit = () => {
+      if (!proj || !proj.active) {
+        this.scene.events.off('update', checkHit);
+        this.projectiles = this.projectiles.filter(p => p !== proj);
+        return;
+      }
+
+      // Off-screen → destroy
+      const cam = this.scene.cameras.main;
+      if (proj.x < cam.scrollX - 80 || proj.x > cam.scrollX + cam.width + 80) {
+        proj.destroy();
+        this.scene.events.off('update', checkHit);
+        this.projectiles = this.projectiles.filter(p => p !== proj);
+        return;
+      }
+
+      // Check against each active player
+      const playerObjs = this.scene.children.list.filter(
+        (c: any) => c.getData && c.getData('entity') instanceof Player
+      );
+      for (const obj of playerObjs) {
+        const player = (obj as any).getData('entity') as Player;
+        if (!player?.sprite?.active) continue;
+        const dist = Phaser.Math.Distance.Between(proj.x, proj.y, player.sprite.x, player.sprite.y - 30);
+        if (dist < 28) {
+          player.takeDamage(damage);
+          this.scene.events.emit('entityDamaged', {
+            entity: player, damage, x: proj.x, y: proj.y, isHeavy: false, isKnockdown: false
+          });
+          // Impact flash
+          const flash = this.scene.add.circle(proj.x, proj.y, 18, glowColor, 0.8);
+          flash.setDepth(proj.depth + 1);
+          this.scene.tweens.add({ targets: flash, alpha: 0, scaleX: 2, scaleY: 2, duration: 180, onComplete: () => flash.destroy() });
+          proj.destroy();
+          this.scene.events.off('update', checkHit);
+          this.projectiles = this.projectiles.filter(p => p !== proj);
+          return;
+        }
+      }
+    };
+
+    this.scene.events.on('update', checkHit);
+
+    // Hard timeout — destroy after 3 seconds regardless
+    this.scene.time.delayedCall(3000, () => {
+      if (proj && proj.active) {
+        proj.destroy();
+        this.scene.events.off('update', checkHit);
+        this.projectiles = this.projectiles.filter(p => p !== proj);
+      }
+    });
   }
 
   /**
@@ -836,6 +999,10 @@ export class Boss extends BaseEntity {
 
     // Freeze AI immediately so it can't keep attacking during death sequence
     this.setState('dying');
+
+    // Destroy any in-flight projectiles immediately
+    this.projectiles.forEach(p => { if (p?.active) p.destroy(); });
+    this.projectiles = [];
 
     // Stop all physics movement
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
