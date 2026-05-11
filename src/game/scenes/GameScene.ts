@@ -28,7 +28,7 @@ import { RoomManager } from '../../systems/background/RoomManager';
 import { VisualEffects } from '../../systems/effects/VisualEffects';
 import { AudioManager } from '../../systems/audio/AudioManager';
 import { MusicContext } from '../../systems/audio/MusicState';
-import { MultiplayerClient } from '../../multiplayer/Client';
+import { MultiplayerClient, GameState, PlayerState } from '../../multiplayer/Client';
 import { BossHealthBar } from '../../ui/BossHealthBar';
 import { StoryManager, LevelTransitionSystem, DialogueSystem, NarrativeSystem } from '../../systems/story';
 import { STORY_REGISTRY } from '../../systems/story/StoryData';
@@ -88,6 +88,8 @@ export class GameScene extends Phaser.Scene {
   private isInitialized: boolean = false; // Track if game is fully initialized
   private cleanupCounter: number = 0;
   private levelCompleteTriggered: boolean = false; // Prevent multiple level-end events
+  // Sprites driven purely by server state — not in EntityManager, no physics body
+  private remotePlayers: Map<string, Phaser.GameObjects.Sprite> = new Map();
 
   constructor() {
     super({ key: 'GameScene' });
@@ -1436,8 +1438,16 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.multiplayerClient.onStateUpdateCallback((gameState) => {
-      // Handle remote player state updates
       this.handleRemotePlayerUpdate(gameState);
+    });
+
+    this.multiplayerClient.onPlayerLeftCallback((playerId) => {
+      const sprite = this.remotePlayers.get(playerId);
+      if (sprite) {
+        sprite.destroy();
+        this.remotePlayers.delete(playerId);
+        console.log(`[GameScene] Remote player disconnected: ${playerId}`);
+      }
     });
 
     this.multiplayerClient.onErrorCallback((error) => {
@@ -1466,10 +1476,68 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private handleRemotePlayerUpdate(_gameState: any) {
-    // Update remote players based on server state
-    // This would sync remote player positions, states, etc.
-    // Implementation depends on how you want to handle remote players
+  private handleRemotePlayerUpdate(gameState: GameState) {
+    gameState.players.forEach((playerState: PlayerState, socketId: string) => {
+      if (!this.remotePlayers.has(socketId)) {
+        this.spawnRemotePlayer(socketId, playerState);
+      }
+      this.syncRemotePlayer(socketId, playerState);
+    });
+  }
+
+  /** Create a lightweight sprite for a newly seen remote player. */
+  private spawnRemotePlayer(socketId: string, state: PlayerState) {
+    const dir = state.facingRight ? 'right' : 'left';
+    const textureKey = `${state.character}_idle_${dir}`;
+    const key = this.textures.exists(textureKey) ? textureKey : '__DEFAULT';
+
+    const sprite = this.add.sprite(state.x, state.y, key);
+    sprite.setOrigin(0.5, 1);
+    sprite.setDepth(state.y);
+    // Slight blue tint so remote player is distinguishable at a glance
+    sprite.setTint(0xaaddff);
+
+    this.remotePlayers.set(socketId, sprite);
+    console.log(`[GameScene] Remote player joined: ${socketId} (${state.character})`);
+  }
+
+  /** Apply server state to an existing remote player sprite every update. */
+  private syncRemotePlayer(socketId: string, state: PlayerState) {
+    const sprite = this.remotePlayers.get(socketId);
+    if (!sprite || !sprite.active) return;
+
+    sprite.x = state.x;
+    sprite.y = state.y;
+    sprite.setDepth(state.y);
+    sprite.setAlpha(state.state === 'dying' ? 0.35 : 1);
+
+    // Preserve the blue ally tint; shift toward red when critically injured
+    sprite.setTint(state.health < 30 ? 0xff8888 : 0xaaddff);
+
+    const dir = state.facingRight ? 'right' : 'left';
+    const animKey = this.remoteAnimKey(state.character, state.state, dir);
+    if (animKey && this.anims.exists(animKey) &&
+        sprite.anims.currentAnim?.key !== animKey) {
+      sprite.anims.play(animKey, true);
+    }
+  }
+
+  /** Map a networked state string to a Phaser animation key. */
+  private remoteAnimKey(charType: string, state: string, dir: string): string {
+    switch (state) {
+      case 'walking':
+      case 'running':
+        return `${charType}_walk_${dir}`;
+      case 'attacking':
+      case 'special':
+      case 'vaulting':
+        return `${charType}_attack_${dir}`;
+      case 'jumping':
+      case 'falling':
+        return `${charType}_jump_${dir}`;
+      default:
+        return `${charType}_idle_${dir}`;
+    }
   }
 
   /**
@@ -2069,6 +2137,8 @@ export class GameScene extends Phaser.Scene {
     if (this.multiplayerClient) {
       this.multiplayerClient.disconnect();
     }
+    this.remotePlayers.forEach(sprite => sprite.destroy());
+    this.remotePlayers.clear();
     if (this.audioManager) {
       this.audioManager.stopMusic();
       this.audioManager.destroy();
