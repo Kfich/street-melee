@@ -23,7 +23,8 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
-    open: true
+    // Don't open a browser tab when running under Playwright or CI
+    open: !process.env.PLAYWRIGHT_TEST && !process.env.CI,
   },
   build: {
     outDir: 'dist',
