@@ -246,6 +246,9 @@ export class GameScene extends Phaser.Scene {
     // Set up camera with level bounds
     this.setupCamera(this.levelManager.getLevelWidth(), height);
 
+    // Fade in from black at scene start
+    this.cameras.main.fadeIn(800, 0, 0, 0);
+
     // Set up collisions
     this.setupCollisions();
     
@@ -768,27 +771,31 @@ export class GameScene extends Phaser.Scene {
       if (this.levelCompleteTriggered) return; // already handling or handled
       this.levelCompleteTriggered = true;
 
-      if (this.levelManager && this.levelTransitionSystem) {
-        // currentLevel is 0-based index of the level that just completed.
-        // nextLevelKey is 1-based: matches the addTransition(1, ...) convention.
-        const currentLevel = this.levelManager.getCurrentLevel() - 1;
-        const nextLevelKey = currentLevel + 1;
-        if (this.levelTransitionSystem.shouldShowTransition(currentLevel, LEVEL_CONFIGS.length)) {
-          // showTransition() returns true when a cutscene was started; wait for it.
-          // Returns false when no transition is registered; fall through immediately.
-          const started = this.levelTransitionSystem.showTransition(nextLevelKey);
-          if (started) {
-            this.events.once('cutsceneEnded', () => {
+      // Fade to black before the level transition
+      this.cameras.main.fadeOut(400, 0, 0, 0);
+      this.cameras.main.once('camerafadeoutcomplete', () => {
+        if (this.levelManager && this.levelTransitionSystem) {
+          // currentLevel is 0-based index of the level that just completed.
+          // nextLevelKey is 1-based: matches the addTransition(1, ...) convention.
+          const currentLevel = this.levelManager.getCurrentLevel() - 1;
+          const nextLevelKey = currentLevel + 1;
+          if (this.levelTransitionSystem.shouldShowTransition(currentLevel, LEVEL_CONFIGS.length)) {
+            // showTransition() returns true when a cutscene was started; wait for it.
+            // Returns false when no transition is registered; fall through immediately.
+            const started = this.levelTransitionSystem.showTransition(nextLevelKey);
+            if (started) {
+              this.events.once('cutsceneEnded', () => {
+                this.progressToNextLevel();
+              });
+            } else {
               this.progressToNextLevel();
-            });
+            }
           } else {
+            // No next level (or last level) — progress immediately (triggers victory)
             this.progressToNextLevel();
           }
-        } else {
-          // No next level (or last level) — progress immediately (triggers victory)
-          this.progressToNextLevel();
         }
-      }
+      });
     });
     
   }
@@ -2029,9 +2036,13 @@ export class GameScene extends Phaser.Scene {
       if (this.storyManager) {
         this.storyManager.setSceneIndex(nextLevelIndex);
       }
-      
+
       // Check for narrative cutscenes at start of new level
       this.narrativeSystem.checkAndTriggerNarrative(nextLevelIndex);
+
+      // Fade in and show level title card
+      this.cameras.main.fadeIn(600, 0, 0, 0);
+      this.showLevelTitleCard(nextLevelIndex);
     } else {
       // All levels complete - victory!
       console.log('[GameScene] All levels complete! Victory!');
@@ -2048,6 +2059,71 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+
+  /**
+   * Display an arcade-style level title card ("STAGE X — LEVEL NAME") that
+   * fades in, holds, then fades out. Rendered in screen space so it stays
+   * centred regardless of camera position.
+   */
+  private showLevelTitleCard(levelIndex: number) {
+    const { width, height } = this.cameras.main;
+    const stageNum = levelIndex + 1;
+    const levelName = LEVEL_CONFIGS[levelIndex]?.name?.toUpperCase() ?? `STAGE ${stageNum}`;
+    const stageLabel = `STAGE ${stageNum}`;
+
+    // Semi-transparent backing bar (full width, ~80px tall)
+    const barHeight = 80;
+    const bar = this.add.rectangle(width / 2, height / 2, width, barHeight, 0x000000, 0.75)
+      .setScrollFactor(0)
+      .setDepth(1000)
+      .setAlpha(0);
+
+    // Stage number (e.g. "STAGE 2")
+    const stageText = this.add.text(width / 2 - 8, height / 2 - 12, stageLabel, {
+      fontFamily: '"Press Start 2P", monospace',
+      fontSize: '20px',
+      color: '#ffcc00',
+      stroke: '#000000',
+      strokeThickness: 4,
+    }).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(1001).setAlpha(0);
+
+    // Level name (e.g. "INDUSTRIAL DISTRICT")
+    const nameText = this.add.text(width / 2 + 8, height / 2 + 16, `— ${levelName} —`, {
+      fontFamily: '"Press Start 2P", monospace',
+      fontSize: '11px',
+      color: '#ffffff',
+      stroke: '#000000',
+      strokeThickness: 3,
+    }).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(1001).setAlpha(0);
+
+    const FADE_IN  = 300;
+    const HOLD     = 1800;
+    const FADE_OUT = 500;
+
+    // Fade in all three objects together
+    this.tweens.add({
+      targets: [bar, stageText, nameText],
+      alpha: 1,
+      duration: FADE_IN,
+      ease: 'Linear',
+      onComplete: () => {
+        // Hold, then fade out and destroy
+        this.time.delayedCall(HOLD, () => {
+          this.tweens.add({
+            targets: [bar, stageText, nameText],
+            alpha: 0,
+            duration: FADE_OUT,
+            ease: 'Linear',
+            onComplete: () => {
+              bar.destroy();
+              stageText.destroy();
+              nameText.destroy();
+            }
+          });
+        });
+      }
+    });
+  }
 
   /**
    * Update player depths and enforce physics constraints after physics step
