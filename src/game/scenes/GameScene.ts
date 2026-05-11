@@ -729,9 +729,14 @@ export class GameScene extends Phaser.Scene {
 
         const finishAndEnd = () => {
           if (this.audioManager) {
+            // force=true: GAMEPLAY priority (3) is lower than BOSS (5), so the
+            // priority arbitration in playMusicWithContext would otherwise
+            // skip the swap. We've already played the victory sting; force
+            // the gameplay track in so the duck doesn't linger.
             this.audioManager.playMusicWithContext(
               this.getSceneGameplayTrack(),
               MusicContext.GAMEPLAY,
+              true,
               true
             );
           }
@@ -820,11 +825,14 @@ export class GameScene extends Phaser.Scene {
         }
       }
       
-      // Update UI, play level music, etc.
+      // Update UI, play level music, etc. Force the swap so a stale BOSS
+      // context (e.g. from a boss that ended via level-end rather than
+      // bossDefeated) still hands off to the new level's gameplay track.
       if (this.audioManager) {
         this.audioManager.playMusicWithContext(
           this.getSceneGameplayTrack(),
           MusicContext.GAMEPLAY,
+          true,
           true
         );
       }
@@ -2239,12 +2247,15 @@ export class GameScene extends Phaser.Scene {
       // Progress to next level
       console.log(`[GameScene] Level ${currentLevelIndex + 1} complete! Progressing to level ${nextLevelIndex + 1}...`);
       
-      // Play level complete sound then switch to next level's music
+      // Play level complete sound then switch to next level's music. Force
+      // the swap so any lingering high-priority context (BOSS / CUTSCENE)
+      // from the previous level doesn't block the new gameplay track.
       if (this.audioManager) {
         this.audioManager.playSound('levelAdvance');
         this.audioManager.playMusicWithContext(
           this.getSceneGameplayTrack(),
           MusicContext.GAMEPLAY,
+          true,
           true
         );
       }
