@@ -93,8 +93,15 @@ export class GameScene extends Phaser.Scene {
   private isInitialized: boolean = false; // Track if game is fully initialized
   private cleanupCounter: number = 0;
   private levelCompleteTriggered: boolean = false; // Prevent multiple level-end events
-  // Sprites driven purely by server state — not in EntityManager, no physics body
+
+  // Remote player rendering (socket-id → objects). No physics, server-driven only.
   private remotePlayers: Map<string, Phaser.GameObjects.Sprite> = new Map();
+  private remotePlayerUI: Map<string, {
+    healthBarBg: Phaser.GameObjects.Rectangle;
+    healthBar: Phaser.GameObjects.Rectangle;
+    nameTag: Phaser.GameObjects.Text;
+    maxHealth: number;
+  }> = new Map();
 
   constructor() {
     super({ key: 'GameScene' });
@@ -1627,8 +1634,15 @@ export class GameScene extends Phaser.Scene {
       if (sprite) {
         sprite.destroy();
         this.remotePlayers.delete(playerId);
-        console.log(`[GameScene] Remote player disconnected: ${playerId}`);
       }
+      const ui = this.remotePlayerUI.get(playerId);
+      if (ui) {
+        ui.healthBarBg.destroy();
+        ui.healthBar.destroy();
+        ui.nameTag.destroy();
+        this.remotePlayerUI.delete(playerId);
+      }
+      console.log(`[GameScene] Remote player disconnected: ${playerId}`);
     });
 
     this.multiplayerClient.onErrorCallback((error) => {
@@ -1658,7 +1672,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleRemotePlayerUpdate(gameState: GameState) {
+    const ownId = this.multiplayerClient?.getPlayerId();
     gameState.players.forEach((playerState: PlayerState, socketId: string) => {
+      // Skip our own state — the local player is already rendered as a full entity
+      if (socketId === ownId) return;
       if (!this.remotePlayers.has(socketId)) {
         this.spawnRemotePlayer(socketId, playerState);
       }
@@ -1666,7 +1683,7 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  /** Create a lightweight sprite for a newly seen remote player. */
+  /** Create a lightweight sprite + health bar + name tag for a newly seen remote player. */
   private spawnRemotePlayer(socketId: string, state: PlayerState) {
     const dir = state.facingRight ? 'right' : 'left';
     const textureKey = `${state.character}_idle_${dir}`;
@@ -1675,14 +1692,41 @@ export class GameScene extends Phaser.Scene {
     const sprite = this.add.sprite(state.x, state.y, key);
     sprite.setOrigin(0.5, 1);
     sprite.setDepth(state.y);
-    // Slight blue tint so remote player is distinguishable at a glance
-    sprite.setTint(0xaaddff);
+    sprite.setTint(0xaaddff); // blue tint — distinguishes remote from local
+
+    // ── Floating health bar (in world space, moves with sprite) ──────────
+    const BAR_W = 40;
+    const BAR_H = 4;
+    const BAR_Y_OFFSET = -90; // above sprite head
+
+    const healthBarBg = this.add.rectangle(state.x, state.y + BAR_Y_OFFSET, BAR_W, BAR_H, 0x222222, 0.85);
+    healthBarBg.setOrigin(0.5, 0.5).setDepth(state.y + 1);
+
+    const healthBar = this.add.rectangle(state.x - BAR_W / 2, state.y + BAR_Y_OFFSET, BAR_W, BAR_H, 0x44dd44);
+    healthBar.setOrigin(0, 0.5).setDepth(state.y + 2);
+
+    // ── Name tag ─────────────────────────────────────────────────────────
+    const nameTag = this.add.text(state.x, state.y + BAR_Y_OFFSET - 10, state.character.toUpperCase(), {
+      fontFamily: '"Press Start 2P", monospace',
+      fontSize: '6px',
+      color: '#aaddff',
+      stroke: '#000000',
+      strokeThickness: 2,
+    });
+    nameTag.setOrigin(0.5, 1).setDepth(state.y + 2);
 
     this.remotePlayers.set(socketId, sprite);
+    this.remotePlayerUI.set(socketId, {
+      healthBarBg,
+      healthBar,
+      nameTag,
+      maxHealth: state.health > 0 ? state.health : 100,
+    });
+
     console.log(`[GameScene] Remote player joined: ${socketId} (${state.character})`);
   }
 
-  /** Apply server state to an existing remote player sprite every update. */
+  /** Apply server state to an existing remote player sprite + UI every update. */
   private syncRemotePlayer(socketId: string, state: PlayerState) {
     const sprite = this.remotePlayers.get(socketId);
     if (!sprite || !sprite.active) return;
@@ -1691,8 +1735,6 @@ export class GameScene extends Phaser.Scene {
     sprite.y = state.y;
     sprite.setDepth(state.y);
     sprite.setAlpha(state.state === 'dying' ? 0.35 : 1);
-
-    // Preserve the blue ally tint; shift toward red when critically injured
     sprite.setTint(state.health < 30 ? 0xff8888 : 0xaaddff);
 
     const dir = state.facingRight ? 'right' : 'left';
@@ -1700,6 +1742,30 @@ export class GameScene extends Phaser.Scene {
     if (animKey && this.anims.exists(animKey) &&
         sprite.anims.currentAnim?.key !== animKey) {
       sprite.anims.play(animKey, true);
+    }
+
+    // ── Update floating UI ────────────────────────────────────────────────
+    const ui = this.remotePlayerUI.get(socketId);
+    if (ui) {
+      const BAR_W = 40;
+      const BAR_Y_OFFSET = -90;
+
+      ui.healthBarBg.setPosition(state.x, state.y + BAR_Y_OFFSET);
+      ui.healthBarBg.setDepth(state.y + 1);
+
+      const pct = Phaser.Math.Clamp(state.health / ui.maxHealth, 0, 1);
+      const fillW = Math.max(0, BAR_W * pct);
+      const barColor = pct > 0.5 ? 0x44dd44 : pct > 0.25 ? 0xffaa00 : 0xdd2222;
+      ui.healthBar.setPosition(state.x - BAR_W / 2, state.y + BAR_Y_OFFSET);
+      ui.healthBar.setSize(fillW, 4);
+      ui.healthBar.setFillStyle(barColor);
+      ui.healthBar.setDepth(state.y + 2);
+
+      ui.nameTag.setPosition(state.x, state.y + BAR_Y_OFFSET - 10);
+      ui.nameTag.setDepth(state.y + 2);
+
+      // Keep maxHealth as the highest seen value (first reliable reading)
+      if (state.health > ui.maxHealth) ui.maxHealth = state.health;
     }
   }
 
@@ -2477,6 +2543,12 @@ export class GameScene extends Phaser.Scene {
     }
     this.remotePlayers.forEach(sprite => sprite.destroy());
     this.remotePlayers.clear();
+    this.remotePlayerUI.forEach(ui => {
+      ui.healthBarBg.destroy();
+      ui.healthBar.destroy();
+      ui.nameTag.destroy();
+    });
+    this.remotePlayerUI.clear();
     if (this.audioManager) {
       this.audioManager.stopMusic();
       this.audioManager.destroy();
