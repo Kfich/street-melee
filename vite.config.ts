@@ -28,7 +28,21 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
-    sourcemap: true
+    // Phaser is ~1.5 MB minified; raise the warning threshold so CI stays clean.
+    chunkSizeWarningLimit: 1600,
+    // Don't ship source maps to end users — they expose full source and add ~11 MB.
+    // Set to 'hidden' if you need them for error monitoring (Sentry etc.) without
+    // serving them publicly.
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        // Split Phaser (~1.5 MB) into its own chunk so the game code chunk stays
+        // small and both can be cached independently by the browser.
+        manualChunks: {
+          phaser: ['phaser'],
+        },
+      },
+    },
   }
 });
 
