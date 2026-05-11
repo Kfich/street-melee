@@ -759,13 +759,18 @@ export const LEVEL_CONFIGS: LevelData[] = [
       { x: 600,  y: 450, type: 'weapon', weaponType: 'pipe', active: true },
       { x: 1500, y: 450, type: 'weapon', weaponType: 'bat',  active: true },
       { x: 3000, y: 450, type: 'weapon', weaponType: 'pipe', active: true },
-      // Items to let players survive the double-boss stretch
+      // Items to let players survive the triple-boss stretch
       { x: 1200, y: 420, type: 'item', itemType: 'chicken', active: true },
+      // Heal before Police encounter at x=2800
+      { x: 2500, y: 420, type: 'item', itemType: 'apple',   active: true },
       { x: 3500, y: 420, type: 'item', itemType: 'chicken', active: true },
       { x: 4200, y: 420, type: 'item', itemType: 'apple',   active: true },
-      // Midnight — first boss
-      { x: 4200, y: 476, type: 'boss', bossType: 'midnight', active: true, delay: 0 },
-      // Tony — second boss, spawns after Midnight is defeated (handled via bossDefeated event)
+      // Police — mid-level boss, spawns on camera scroll (active=true)
+      // Defeating Police triggers activateNextBoss() → Midnight → Tony chain
+      { x: 2800, y: 476, type: 'boss', bossType: 'police', active: true, delay: 0 },
+      // Midnight — second boss, spawned only after Police is defeated
+      { x: 4200, y: 476, type: 'boss', bossType: 'midnight', active: false, delay: 0 },
+      // Tony — final boss, spawns after Midnight is defeated
       { x: 4700, y: 476, type: 'boss', bossType: 'tony', active: false, delay: 4000 }
     ],
     waves: [
