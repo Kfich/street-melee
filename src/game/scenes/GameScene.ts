@@ -74,6 +74,8 @@ export class GameScene extends Phaser.Scene {
   private dialogueSystem!: DialogueSystem;
   private narrativeSystem!: NarrativeSystem;
   private currentLevelIndex: number = 0;
+  // contextual gameplay/boss/cutscene/victory tracks. Updated by roomLoaded /
+  // roomTransitionComplete via SCENE_TO_LEVEL_MAP reverse lookup.
   private cutsceneTriggerSystem!: CutsceneTriggerSystem;
   private bossSceneManager!: BossSceneManager;
   private playerScore: number = 0; // Track player score
@@ -211,7 +213,11 @@ export class GameScene extends Phaser.Scene {
     
     // Start gameplay music (with small delay to ensure audio is ready)
     this.time.delayedCall(GameConfig.INIT_DELAY_MEDIUM, () => {
-      this.audioManager.playMusicWithContext(this.getLevelMusicTrack(0), MusicContext.GAMEPLAY, true);
+      this.audioManager.playMusicWithContext(
+        this.getLevelMusicTrack(0),
+        MusicContext.GAMEPLAY,
+        true
+      );
     });
     
     // Initialize room system (loads first room and backgrounds)
@@ -685,16 +691,17 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    // Listen for boss defeat — emit levelEndReached which the guarded transition
-    // handler will pick up (it prevents double-firing via levelCompleteTriggered).
+    // Boss defeat: duck boss music, play sting_boss_defeat (+ optional
+    // character-specific win sting on the final boss of the level), then
+    // either spawn the next queued boss or end the level.
     this.events.on('bossDefeated', (data: { boss: Boss; bossType: string }) => {
       console.log(`[GameScene] Boss defeated: ${data.bossType}`);
-      // If there is a sequential boss queued for this level, spawn the next one.
-      // Keep boss music playing — next boss entrance will handle its own music cue.
+      // If there is a sequential boss queued for this level, spawn it instead of ending.
+      // Keep boss music playing — the next entrance will switch music.
       if (this.levelManager && this.levelManager.activateNextBoss()) {
         return;
       }
-      // No more bosses — fade back to level music before the level-end transition
+      // No more bosses — fade back to level music before the level-end transition.
       if (this.audioManager) {
         this.audioManager.playMusicWithContext(
           this.getLevelMusicTrack(this.currentLevelIndex),

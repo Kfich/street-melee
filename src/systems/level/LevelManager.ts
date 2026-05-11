@@ -619,19 +619,19 @@ export const LEVEL_CONFIGS: LevelData[] = [
       maxY: 576
     },
     spawnPoints: [
-      // Initial enemies (spawn at ground level - y: 476 for height 576)
-      { x: 400, y: 476, type: 'enemy', enemyType: 'basic', active: true, wave: 0 },
-      { x: 600, y: 476, type: 'enemy', enemyType: 'galsia', active: true, wave: 0 },
-      
-      // Weapons (slightly above ground for visibility)
-      { x: 500, y: 450, type: 'weapon', weaponType: 'pipe', active: true },
-      { x: 1000, y: 450, type: 'weapon', weaponType: 'bat', active: true },
-      
-      // Items (floating above ground)
-      { x: 300, y: 420, type: 'item', itemType: 'apple', active: true },
+      // Initial enemies — staggered depths so they don't approach in a line
+      { x: 400, y: 476, type: 'enemy', enemyType: 'basic',  active: true, wave: 0 },
+      { x: 600, y: 500, type: 'enemy', enemyType: 'galsia', active: true, wave: 0 },
+
+      // Weapons
+      { x: 500,  y: 450, type: 'weapon', weaponType: 'pipe', active: true },
+      { x: 1000, y: 450, type: 'weapon', weaponType: 'bat',  active: true },
+
+      // Items
+      { x: 300, y: 420, type: 'item', itemType: 'apple',    active: true },
       { x: 700, y: 420, type: 'item', itemType: 'moneyBag', active: true },
-      
-      // Boss spawn at the end (after all waves)
+
+      // Boss
       { x: 2800, y: 476, type: 'boss', bossType: 'blizz', active: true, delay: 0 }
     ],
     waves: [
@@ -639,9 +639,9 @@ export const LEVEL_CONFIGS: LevelData[] = [
         waveNumber: 1,
         triggerX: 800,
         enemies: [
-          { type: 'basic', x: 1000, y: 476 },
-          { type: 'galsia', x: 1200, y: 476 },
-          { type: 'basic', x: 1400, y: 476 }
+          { type: 'basic',  x: 1000, y: 476 },
+          { type: 'galsia', x: 1200, y: 500 },
+          { type: 'basic',  x: 1400, y: 460 }
         ]
       },
       {
@@ -649,19 +649,19 @@ export const LEVEL_CONFIGS: LevelData[] = [
         triggerX: 1500,
         enemies: [
           { type: 'donovan', x: 1700, y: 476 },
-          { type: 'galsia', x: 1900, y: 476 },
-          { type: 'basic', x: 2100, y: 476 },
-          { type: 'donovan', x: 2300, y: 476 }
+          { type: 'galsia',  x: 1900, y: 500 },
+          { type: 'basic',   x: 2100, y: 460 },
+          { type: 'donovan', x: 2300, y: 490 }
         ]
       },
       {
         waveNumber: 3,
         triggerX: 2500,
         enemies: [
-          { type: 'donovan', x: 2600, y: 476, delay: 0 },
-          { type: 'galsia', x: 2700, y: 476, delay: 300 },
-          { type: 'donovan', x: 2800, y: 476, delay: 600 },
-          { type: 'basic', x: 2900, y: 476, delay: 900 }
+          { type: 'donovan', x: 2600, y: 476, delay: 0   },
+          { type: 'galsia',  x: 2700, y: 500, delay: 300 },
+          { type: 'donovan', x: 2800, y: 460, delay: 600 },
+          { type: 'basic',   x: 2900, y: 490, delay: 900 }
         ]
       }
     ],
@@ -687,9 +687,20 @@ export const LEVEL_CONFIGS: LevelData[] = [
       maxY: 576
     },
     spawnPoints: [
+      // Initial enemies — flanking depths
       { x: 500, y: 476, type: 'enemy', enemyType: 'donovan', active: true, wave: 0 },
-      { x: 700, y: 476, type: 'enemy', enemyType: 'galsia', active: true, wave: 0 },
-      { x: 900, y: 450, type: 'weapon', weaponType: 'bat', active: true },
+      { x: 700, y: 500, type: 'enemy', enemyType: 'galsia',  active: true, wave: 0 },
+      { x: 900, y: 460, type: 'enemy', enemyType: 'basic',   active: true, wave: 0 },
+
+      // Weapons — two throughout the level
+      { x:  900, y: 450, type: 'weapon', weaponType: 'bat',  active: true },
+      { x: 2200, y: 450, type: 'weapon', weaponType: 'pipe', active: true },
+
+      // Healing items — critical since Benny is tough (600 HP, 25 DMG)
+      { x:  600, y: 420, type: 'item', itemType: 'apple',   active: true },
+      { x: 1800, y: 420, type: 'item', itemType: 'chicken', active: true },
+      { x: 3200, y: 420, type: 'item', itemType: 'apple',   active: true },
+
       // Benny — boss fight at end of level 2
       { x: 3800, y: 476, type: 'boss', bossType: 'benny', active: true, delay: 0 }
     ],
@@ -699,8 +710,8 @@ export const LEVEL_CONFIGS: LevelData[] = [
         triggerX: 1200,
         enemies: [
           { type: 'donovan', x: 1400, y: 476 },
-          { type: 'donovan', x: 1600, y: 476 },
-          { type: 'galsia', x: 1800, y: 476 }
+          { type: 'donovan', x: 1600, y: 500 },
+          { type: 'galsia',  x: 1800, y: 460 }
         ]
       },
       {
@@ -708,19 +719,19 @@ export const LEVEL_CONFIGS: LevelData[] = [
         triggerX: 2500,
         enemies: [
           { type: 'donovan', x: 2700, y: 476 },
-          { type: 'galsia', x: 2900, y: 476 },
-          { type: 'donovan', x: 3100, y: 476 },
-          { type: 'galsia', x: 3300, y: 476 }
+          { type: 'galsia',  x: 2900, y: 500 },
+          { type: 'donovan', x: 3100, y: 460 },
+          { type: 'galsia',  x: 3300, y: 490 }
         ]
       },
       {
         waveNumber: 3,
         triggerX: 3500,
         enemies: [
-          { type: 'donovan', x: 3600, y: 476, delay: 0 },
-          { type: 'galsia',  x: 3700, y: 476, delay: 200 },
-          { type: 'donovan', x: 3800, y: 476, delay: 400 },
-          { type: 'galsia',  x: 3900, y: 476, delay: 600 }
+          { type: 'donovan', x: 3600, y: 476, delay: 0   },
+          { type: 'galsia',  x: 3700, y: 500, delay: 200 },
+          { type: 'donovan', x: 3800, y: 460, delay: 400 },
+          { type: 'galsia',  x: 3900, y: 490, delay: 600 }
         ]
       }
     ],
@@ -763,9 +774,9 @@ export const LEVEL_CONFIGS: LevelData[] = [
         triggerX: 1000,
         enemies: [
           { type: 'donovan', x: 1200, y: 476 },
-          { type: 'galsia',  x: 1400, y: 476 },
-          { type: 'galsia',  x: 1600, y: 476 },
-          { type: 'donovan', x: 1800, y: 476 }
+          { type: 'galsia',  x: 1400, y: 500 },
+          { type: 'galsia',  x: 1600, y: 460 },
+          { type: 'donovan', x: 1800, y: 490 }
         ]
       },
       {
@@ -773,9 +784,9 @@ export const LEVEL_CONFIGS: LevelData[] = [
         triggerX: 2200,
         enemies: [
           { type: 'donovan', x: 2400, y: 476, delay: 0   },
-          { type: 'donovan', x: 2600, y: 476, delay: 300 },
-          { type: 'galsia',  x: 2800, y: 476, delay: 100 },
-          { type: 'galsia',  x: 3000, y: 476, delay: 400 },
+          { type: 'donovan', x: 2600, y: 500, delay: 300 },
+          { type: 'galsia',  x: 2800, y: 460, delay: 100 },
+          { type: 'galsia',  x: 3000, y: 490, delay: 400 },
           { type: 'donovan', x: 3200, y: 476, delay: 600 }
         ]
       },
