@@ -743,17 +743,25 @@ export class PreloadScene extends Phaser.Scene {
   }
 
   /**
-   * Load all audio files (sound effects and music)
+   * Load all audio files (sound effects and music). Configs that specify a
+   * fallbackPath are loaded as a Phaser dual-source list so the browser can
+   * pick OGG when supported and fall back to MP3 otherwise.
    */
   private loadAudioFiles(): void {
     // Load sound effects
     Object.values(SOUND_EFFECTS).forEach(soundConfig => {
-      this.load.audio(soundConfig.key, soundConfig.path);
+      const sources = soundConfig.fallbackPath
+        ? [soundConfig.path, soundConfig.fallbackPath]
+        : soundConfig.path;
+      this.load.audio(soundConfig.key, sources);
     });
 
     // Load music tracks
     Object.values(MUSIC_TRACKS).forEach(musicConfig => {
-      this.load.audio(musicConfig.key, musicConfig.path);
+      const sources = musicConfig.fallbackPath
+        ? [musicConfig.path, musicConfig.fallbackPath]
+        : musicConfig.path;
+      this.load.audio(musicConfig.key, sources);
     });
   }
 }
