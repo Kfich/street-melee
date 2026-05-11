@@ -937,12 +937,11 @@ export class VisualEffects {
    */
   createScorePopup(x: number, y: number, score: number, isCombo: boolean = false): void {
     const text = this.scene.add.text(x, y, `+${score}`, {
-      fontSize: isCombo ? '20px' : '16px',
-      fontFamily: 'Arial',
+      fontSize: isCombo ? '14px' : '11px',
+      fontFamily: '"Press Start 2P", monospace',
       color: isCombo ? '#ffff00' : '#ffffff',
       stroke: '#000000',
       strokeThickness: 3,
-      fontStyle: 'bold'
     });
     
     text.setOrigin(0.5, 0.5);
