@@ -110,6 +110,11 @@ export class GameScene extends Phaser.Scene {
   private maxComboReached: number = 0;
   // Last activated checkpoint X position (null = none activated yet)
   private lastCheckpointX: number | null = null;
+  // True while PLAYER DOWN card is animating — prevents life double-decrement
+  private isRespawning: boolean = false;
+  // Pause / ESC key (created once in create(), not every frame)
+  private pauseKey?: Phaser.Input.Keyboard.Key;
+  private escKey?: Phaser.Input.Keyboard.Key;
 
   // Remote player rendering (socket-id → objects). No physics, server-driven only.
   private remotePlayers: Map<string, Phaser.GameObjects.Sprite> = new Map();
@@ -129,6 +134,7 @@ export class GameScene extends Phaser.Scene {
     this.isInitialized = false;
     this.levelCompleteTriggered = false;
     this.lastCheckpointX = null;
+    this.isRespawning = false;
 
     // Initialize with character selections
     this.data.set('player1Character', data.player1Character || 'axel');
@@ -204,6 +210,10 @@ export class GameScene extends Phaser.Scene {
     // Initialize managers
     this.inputManager = new InputManager(this);
     this.entityManager = new EntityManager();
+
+    // Register pause / ESC keys once so update() doesn't create new key objects every frame
+    this.pauseKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.P);
+    this.escKey   = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
     
     // Expose EntityManager on scene for entity access (similar to roomManager pattern)
     (this as any).entityManager = this.entityManager;
@@ -391,9 +401,8 @@ export class GameScene extends Phaser.Scene {
 
       // Set up in-game menu button callbacks
       if (this.widgetManager) {
-        // Menu button - show main menu
+        // Menu button - return to main menu (scene.start() stops and cleans up GameScene)
         this.widgetManager.setMenuButtonCallback('menu', () => {
-          this.scene.pause();
           this.scene.start('MainMenuScene');
         });
 
@@ -459,9 +468,13 @@ export class GameScene extends Phaser.Scene {
     });
 
     // Initialize boss health bar (hidden until boss spawns)
-    // Defer creation slightly to ensure scene is fully ready
+    // Defer creation slightly to ensure scene is fully ready, then wire it
+    // back to BossManager (which was created earlier with undefined).
     this.time.delayedCall(GameConfig.INIT_DELAY_SHORT, () => {
       this.bossHealthBar = new BossHealthBar(this);
+      if (this.bossManager) {
+        this.bossManager.setBossHealthBar(this.bossHealthBar);
+      }
     });
 
     // Old debug text and instructions removed - widgets now handle UI display
@@ -1627,9 +1640,12 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    // Prevent re-entrancy during PLAYER DOWN card or continue screen
+    if (this.isRespawning) return;
+
     // Check if all players are dead
     const allPlayersDead = this.players.every(player => player && !player.isAlive());
-    
+
     if (allPlayersDead && this.players.length > 0) {
       // Player died - lose a life
       if (this.playerLives > 0) {
@@ -1637,7 +1653,7 @@ export class GameScene extends Phaser.Scene {
         if (this.widgetManager) {
           this.widgetManager.loseLife();
         }
-        
+
         // If lives remaining, respawn player using the full reset() which clears
         // all combat state (knockedDown, invincibility, cooldowns, tweens, etc.)
         if (this.playerLives > 0 && this.players[0]) {
@@ -1647,10 +1663,14 @@ export class GameScene extends Phaser.Scene {
           // Use the ground Y position — the dead sprite's Y may be off-screen
           const groundY = this.cameras.main.height - GameConfig.GROUND_OFFSET;
 
+          // Guard against re-entrant calls while the card is animating
+          this.isRespawning = true;
+
           // Show PLAYER DOWN card, then respawn after a brief hold
           this.showPlayerDownCard(() => {
             player.reset(safeX, groundY);
             player.grantRespawnInvincibility();
+            this.isRespawning = false;
 
             // Update widget manager with restored player
             if (this.widgetManager) {
@@ -1661,7 +1681,7 @@ export class GameScene extends Phaser.Scene {
           return; // Don't game over yet
         }
       }
-      
+
       // No lives remaining — show continue screen
       this.showContinueScreen();
     }
@@ -2011,6 +2031,7 @@ export class GameScene extends Phaser.Scene {
     const statsPayload = {
       victory: true,
       score,
+      time: this.widgetManager ? this.widgetManager.getGameTime() : 0,
       enemyKills: this.enemyKillCount,
       maxCombo: this.maxComboReached,
     };
@@ -2152,16 +2173,15 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Check for pause
-    if (this.input.keyboard?.checkDown(this.input.keyboard.addKey('P'))) {
-      if (!this.scene.isPaused('PauseScene')) {
-        this.scene.pause();
-        // Pause clock when game is paused
-        if (this.widgetManager) {
-          this.widgetManager.stopClock();
-        }
-        this.scene.launch('PauseScene', { gameSceneKey: 'GameScene' });
+    // Check for pause (P or ESC) — guard with isActive so we don't double-launch
+    const pausePressed = (this.pauseKey && Phaser.Input.Keyboard.JustDown(this.pauseKey)) ||
+                         (this.escKey   && Phaser.Input.Keyboard.JustDown(this.escKey));
+    if (pausePressed && !this.scene.isActive('PauseScene')) {
+      this.scene.pause();
+      if (this.widgetManager) {
+        this.widgetManager.stopClock();
       }
+      this.scene.launch('PauseScene', { gameSceneKey: 'GameScene' });
     }
 
     // Handle input and update all players (using PlayerUpdateManager)

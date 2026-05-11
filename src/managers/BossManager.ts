@@ -279,6 +279,14 @@ export class BossManager {
   }
 
   /**
+   * Wire up the boss health bar after deferred creation.
+   * Called from GameScene once the BossHealthBar is initialized.
+   */
+  setBossHealthBar(bar: BossHealthBar): void {
+    this.bossHealthBar = bar;
+  }
+
+  /**
    * Update boss health bar
    */
   updateHealthBar(): void {
