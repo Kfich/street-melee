@@ -210,9 +210,8 @@ export class GameScene extends Phaser.Scene {
     this.registerStoryCutscenes();
     
     // Start gameplay music (with small delay to ensure audio is ready)
-    // All previous music has been stopped, so this will be the only music playing
     this.time.delayedCall(GameConfig.INIT_DELAY_MEDIUM, () => {
-      this.audioManager.playMusicWithContext('level1', MusicContext.GAMEPLAY, true);
+      this.audioManager.playMusicWithContext(this.getLevelMusicTrack(0), MusicContext.GAMEPLAY, true);
     });
     
     // Initialize room system (loads first room and backgrounds)
@@ -671,10 +670,13 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    // Boss entrance cinematic — freeze/unfreeze player input
+    // Boss entrance cinematic — freeze player input and switch to boss music
     this.events.on('bossEntranceStart', () => {
       if (this.playerUpdateManager) {
         this.playerUpdateManager.setInputFrozen(true);
+      }
+      if (this.audioManager) {
+        this.audioManager.playMusicWithContext('boss', MusicContext.BOSS, true);
       }
     });
     this.events.on('bossEntranceEnd', () => {
@@ -687,9 +689,18 @@ export class GameScene extends Phaser.Scene {
     // handler will pick up (it prevents double-firing via levelCompleteTriggered).
     this.events.on('bossDefeated', (data: { boss: Boss; bossType: string }) => {
       console.log(`[GameScene] Boss defeated: ${data.bossType}`);
-      // If there is a sequential boss queued for this level, spawn it instead of ending
+      // If there is a sequential boss queued for this level, spawn the next one.
+      // Keep boss music playing — next boss entrance will handle its own music cue.
       if (this.levelManager && this.levelManager.activateNextBoss()) {
         return;
+      }
+      // No more bosses — fade back to level music before the level-end transition
+      if (this.audioManager) {
+        this.audioManager.playMusicWithContext(
+          this.getLevelMusicTrack(this.currentLevelIndex),
+          MusicContext.GAMEPLAY,
+          true
+        );
       }
       this.events.emit('levelEndReached');
     });
@@ -759,7 +770,7 @@ export class GameScene extends Phaser.Scene {
       
       // Update UI, play level music, etc.
       if (this.audioManager) {
-        this.audioManager.playMusicWithContext('level1', MusicContext.GAMEPLAY, true);
+        this.audioManager.playMusicWithContext(this.getLevelMusicTrack(this.currentLevelIndex), MusicContext.GAMEPLAY, true);
       }
     });
 
@@ -2007,9 +2018,10 @@ export class GameScene extends Phaser.Scene {
       // Progress to next level
       console.log(`[GameScene] Level ${currentLevelIndex + 1} complete! Progressing to level ${nextLevelIndex + 1}...`);
       
-      // Play level complete sound
+      // Play level complete sound then switch to next level's music
       if (this.audioManager) {
         this.audioManager.playSound('levelAdvance');
+        this.audioManager.playMusicWithContext(this.getLevelMusicTrack(nextLevelIndex), MusicContext.GAMEPLAY, true);
       }
       
       // Clean up current level entities
@@ -2059,6 +2071,15 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+
+  /**
+   * Map a 0-based level index to the music track key for that level.
+   * Level 3 reuses the level2 track since no dedicated asset exists yet.
+   */
+  private getLevelMusicTrack(levelIndex: number): string {
+    const tracks = ['level1', 'level2', 'level2'];
+    return tracks[levelIndex] ?? 'level1';
+  }
 
   /**
    * Display an arcade-style level title card ("STAGE X — LEVEL NAME") that
