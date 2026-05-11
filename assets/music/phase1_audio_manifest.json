@@ -1,0 +1,116 @@
+{
+  "project": "Street Melee",
+  "pack": "phase1_mvp_audio",
+  "sample_rate": 44100,
+  "created_by": "procedural synthesis script",
+  "assets": [
+    {
+      "key": "menu_character_select",
+      "category": "music/ui",
+      "bpm": 120.0,
+      "key_signature": "A minor / C major",
+      "looping": true,
+      "loop_start": 0,
+      "loop_end": 2116800,
+      "duration_seconds": 48.0,
+      "description": "48s seamless chiptune character-select loop with four fighter vamps.",
+      "files": {
+        "wav": "wav/menu_character_select.wav",
+        "ogg": "ogg/menu_character_select.ogg",
+        "mp3": "mp3/menu_character_select.mp3"
+      },
+      "rms_dbfs_estimate": -20.66,
+      "peak_dbfs_estimate": -1.11
+    },
+    {
+      "key": "pause_ambient",
+      "category": "music/ui",
+      "bpm": 80.0,
+      "key_signature": "A minor",
+      "looping": true,
+      "loop_start": 0,
+      "loop_end": 1323000,
+      "duration_seconds": 30.0,
+      "description": "30s sparse low-energy chiptune pause loop.",
+      "files": {
+        "wav": "wav/pause_ambient.wav",
+        "ogg": "ogg/pause_ambient.ogg",
+        "mp3": "mp3/pause_ambient.mp3"
+      },
+      "rms_dbfs_estimate": -18.0,
+      "peak_dbfs_estimate": -5.19
+    },
+    {
+      "key": "sting_wave_clear",
+      "category": "sounds/stingers",
+      "bpm": null,
+      "key_signature": "A minor",
+      "looping": false,
+      "loop_start": 0,
+      "loop_end": 44100,
+      "duration_seconds": 1.0,
+      "description": "1.0s bright 8-bit wave-clear cadence.",
+      "files": {
+        "wav": "wav/sting_wave_clear.wav",
+        "ogg": "ogg/sting_wave_clear.ogg",
+        "mp3": "mp3/sting_wave_clear.mp3"
+      },
+      "rms_dbfs_estimate": -11.31,
+      "peak_dbfs_estimate": -0.92
+    },
+    {
+      "key": "sting_boss_defeat",
+      "category": "sounds/stingers",
+      "bpm": null,
+      "key_signature": "F minor",
+      "looping": false,
+      "loop_start": 0,
+      "loop_end": 110250,
+      "duration_seconds": 2.5,
+      "description": "2.5s heroic brass-style victory sting with 8-bit overlay.",
+      "files": {
+        "wav": "wav/sting_boss_defeat.wav",
+        "ogg": "ogg/sting_boss_defeat.ogg",
+        "mp3": "mp3/sting_boss_defeat.mp3"
+      },
+      "rms_dbfs_estimate": -13.54,
+      "peak_dbfs_estimate": -0.72
+    },
+    {
+      "key": "sting_level_clear",
+      "category": "sounds/stingers",
+      "bpm": 120.0,
+      "key_signature": "C major",
+      "looping": false,
+      "loop_start": 0,
+      "loop_end": 176400,
+      "duration_seconds": 4.0,
+      "description": "4.0s celebratory hybrid funk/chiptune level-clear jingle.",
+      "files": {
+        "wav": "wav/sting_level_clear.wav",
+        "ogg": "ogg/sting_level_clear.ogg",
+        "mp3": "mp3/sting_level_clear.mp3"
+      },
+      "rms_dbfs_estimate": -12.95,
+      "peak_dbfs_estimate": -0.72
+    },
+    {
+      "key": "sting_menu_confirm",
+      "category": "sounds/stingers",
+      "bpm": null,
+      "key_signature": "C major",
+      "looping": false,
+      "loop_start": 0,
+      "loop_end": 17640,
+      "duration_seconds": 0.4,
+      "description": "0.4s optional 8-bit rising menu-confirm arp.",
+      "files": {
+        "wav": "wav/sting_menu_confirm.wav",
+        "ogg": "ogg/sting_menu_confirm.ogg",
+        "mp3": "mp3/sting_menu_confirm.mp3"
+      },
+      "rms_dbfs_estimate": -10.54,
+      "peak_dbfs_estimate": -1.41
+    }
+  ]
+}
