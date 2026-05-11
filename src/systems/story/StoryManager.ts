@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { Cutscene, CutsceneScene, DialogueEntry } from './DialogueBuilder';
 import { AudioManager } from '../audio/AudioManager';
+import { MusicContext } from '../audio/MusicState';
 import { getSceneDialogue } from './SceneDialogueData';
 
 /**
@@ -22,6 +23,9 @@ export class StoryManager {
   private isPlayingCutscene: boolean = false;
   private cutsceneRegistry: Map<string, () => Cutscene> = new Map();
   private currentCharacter: string = 'dario'; // Default character
+  // True when this cutscene ducked the underlying combat music instead of
+  // swapping the track; endCutscene uses this to know whether to unduck.
+  private didDuckUnderlyingMusic: boolean = false;
 
   constructor(scene: Phaser.Scene, audioManager?: AudioManager) {
     this.scene = scene;
@@ -125,6 +129,21 @@ export class StoryManager {
     if (cutscene.type === 'dialogue' || cutscene.type === 'story_beat') {
       if (this.scene.scene.key === 'GameScene') {
         this.scene.scene.pause('GameScene');
+      }
+
+      // In-gameplay dialogue ducking: when a dialogue cutscene fires on top of
+      // GAMEPLAY or BOSS music, duck the underlying track to 0.3 instead of
+      // letting the existing audio fight the dialogue VO. CUTSCENE / MENU /
+      // CHARACTER_SELECT / etc. contexts keep their existing handling.
+      if (this.audioManager) {
+        const currentContext = this.audioManager.getCurrentMusicContext();
+        const shouldDuck =
+          currentContext === MusicContext.GAMEPLAY ||
+          currentContext === MusicContext.BOSS;
+        if (shouldDuck) {
+          this.audioManager.duckMusic(0.3, 200);
+          this.didDuckUnderlyingMusic = true;
+        }
       }
     }
 
@@ -464,6 +483,12 @@ export class StoryManager {
     // Resume game only if we actually paused it (dialogue / story_beat types only).
     if (this.currentCutscene?.type === 'dialogue' || this.currentCutscene?.type === 'story_beat') {
       this.scene.scene.resume('GameScene');
+    }
+
+    // Unduck combat music if this cutscene ducked it on entry.
+    if (this.didDuckUnderlyingMusic && this.audioManager) {
+      this.audioManager.unduckMusic(200);
+      this.didDuckUnderlyingMusic = false;
     }
 
     // Reset state

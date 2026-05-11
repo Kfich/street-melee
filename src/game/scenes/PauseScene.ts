@@ -20,9 +20,12 @@ export class PauseScene extends BaseMenuScene {
     const gameScene = this.scene.get('GameScene');
     if (gameScene && 'audioManager' in gameScene) {
       this.audioManager = (gameScene as any).audioManager as AudioManager;
-      // Pause music when pausing
+      // Duck the underlying gameplay/boss music and lay the soft pause_ambient
+      // loop on top. duckMusic + playPauseAmbient are both idempotent, so
+      // re-entering pause (e.g. from settings menu) does not stack loops.
       if (this.audioManager) {
-        this.audioManager.pauseMusic();
+        this.audioManager.duckMusic(0.2, 200);
+        this.audioManager.playPauseAmbient();
       }
     }
 
@@ -67,9 +70,10 @@ export class PauseScene extends BaseMenuScene {
   }
 
   private resume() {
-    // Resume music when resuming
+    // Drop the pause ambient and ramp gameplay/boss music back up.
     if (this.audioManager) {
-      this.audioManager.resumeMusic();
+      this.audioManager.stopPauseAmbient();
+      this.audioManager.unduckMusic(200);
     }
     this.scene.resume(this.gameSceneKey);
     
@@ -89,8 +93,10 @@ export class PauseScene extends BaseMenuScene {
   }
 
   private returnToMenu() {
-    // Stop gameplay music when returning to menu
+    // Tear down the pause overlay and fade the underlying track out fully
+    // before handing off to the main menu.
     if (this.audioManager) {
+      this.audioManager.stopPauseAmbient();
       this.audioManager.stopMusic(true, 500);
     }
     this.scene.stop(this.gameSceneKey);
@@ -98,9 +104,12 @@ export class PauseScene extends BaseMenuScene {
   }
 
   shutdown() {
-    // Resume music if scene is closed without resuming
+    // Safety net: if the pause scene is closed via a path other than resume()
+    // (e.g. opening Settings), still drop the ambient overlay so it can be
+    // restarted cleanly on the next pause.
     if (this.audioManager) {
-      this.audioManager.resumeMusic();
+      this.audioManager.stopPauseAmbient();
+      this.audioManager.unduckMusic(150);
     }
   }
 }
