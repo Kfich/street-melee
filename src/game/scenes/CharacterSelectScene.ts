@@ -3,6 +3,7 @@ import { MenuButton } from '../../ui/menu/MenuButton';
 import { CharacterSelectBox } from '../../ui/menu/CharacterSelectBox';
 import { CharacterType } from '../types/CharacterType';
 import { CharacterPreviewPanel } from '../../ui/menu/CharacterPreviewPanel';
+import { MusicContext } from '../../systems/audio/MusicState';
 // CharacterData used via CharacterPreviewPanel internally
 
 export class CharacterSelectScene extends BaseMenuScene {
@@ -19,6 +20,20 @@ export class CharacterSelectScene extends BaseMenuScene {
 
   constructor() {
     super('CharacterSelectScene');
+  }
+
+  protected playMenuMusic(): void {
+    // Crossfade from main-menu chiptune into the slightly busier character-
+    // select loop so the screen feels distinct from the title.
+    this.time.delayedCall(100, () => {
+      if (this.audioManager) {
+        this.audioManager.playMusicWithContext(
+          'menu_character_select',
+          MusicContext.CHARACTER_SELECT,
+          true
+        );
+      }
+    });
   }
 
   init(data: { isMultiplayer?: boolean; roomId?: string }) {
@@ -166,9 +181,10 @@ export class CharacterSelectScene extends BaseMenuScene {
       }
     });
 
-    // Play selection sound
+    // Confirm sting — sits on top of the navigation tone so the selection
+    // moment feels weighty without interrupting the character-select loop.
     if (this.audioManager) {
-      this.audioManager.playSound('menuSelect');
+      this.audioManager.playSting('sting_menu_confirm');
     }
 
     // For single player, start game immediately after selection

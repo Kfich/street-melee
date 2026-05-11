@@ -34,6 +34,7 @@ import { StoryManager, LevelTransitionSystem, DialogueSystem, NarrativeSystem } 
 import { STORY_REGISTRY } from '../../systems/story/StoryData';
 import { CutsceneTriggerSystem } from '../../systems/story/CutsceneTriggerSystem';
 import { SCENE_TO_LEVEL_MAP } from '../../config/GameScenes';
+import { getMusicForScene } from '../../config/SceneMusicMap';
 import { BossSceneManager } from '../../systems/boss/BossSceneManager';
 import { WidgetManager } from '../../ui/widgets';
 import { PlayerUpdateManager } from '../../managers/PlayerUpdateManager';
@@ -74,8 +75,10 @@ export class GameScene extends Phaser.Scene {
   private dialogueSystem!: DialogueSystem;
   private narrativeSystem!: NarrativeSystem;
   private currentLevelIndex: number = 0;
-  // contextual gameplay/boss/cutscene/victory tracks. Updated by roomLoaded /
-  // roomTransitionComplete via SCENE_TO_LEVEL_MAP reverse lookup.
+  // 1-based story scene number used by SceneMusicMap.getMusicForScene to
+  // choose contextual gameplay/boss/cutscene/victory tracks. Kept in sync
+  // with updateSceneNumber() via roomLoaded events.
+  private currentSceneNumber: number = 1;
   private cutsceneTriggerSystem!: CutsceneTriggerSystem;
   private bossSceneManager!: BossSceneManager;
   private playerScore: number = 0; // Track player score
