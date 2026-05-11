@@ -78,6 +78,7 @@ global.Phaser = {
           setVelocity: vi.fn((vx: number, vy: number) => { vel.x = vx; vel.y = vy; }),
           setVelocityX: vi.fn((v: number) => { vel.x = v; }),
           setVelocityY: vi.fn((v: number) => { vel.y = v; }),
+          setAngularVelocity: vi.fn(),
         };
       };
 

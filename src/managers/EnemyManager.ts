@@ -17,6 +17,10 @@ export class EnemyManager {
   private levelManager?: LevelManager;
   private visualEffects?: VisualEffects;
   private enemyShadows: Map<Enemy, Phaser.GameObjects.Ellipse> = new Map();
+  private enemyHealthBars: Map<Enemy, {
+    bg: Phaser.GameObjects.Rectangle;
+    fill: Phaser.GameObjects.Rectangle;
+  }> = new Map();
   private ground: Phaser.GameObjects.Rectangle;
   private enemyAI?: EnemyAI;
 
@@ -74,6 +78,16 @@ export class EnemyManager {
     // Ground collision
     this.scene.physics.add.collider(enemy.sprite, this.ground);
 
+    // --- Enemy health bar (world-space, above sprite) ---
+    const BAR_W = 30;
+    const BAR_H = 4;
+    const bg = this.scene.add.rectangle(enemy.sprite.x, enemy.sprite.y, BAR_W, BAR_H, 0x222222, 0.85)
+      .setDepth(500).setAlpha(0);
+    const fill = this.scene.add.rectangle(
+      enemy.sprite.x - BAR_W / 2, enemy.sprite.y, BAR_W, BAR_H - 1, 0x44ff44, 0.95
+    ).setOrigin(0, 0.5).setDepth(501).setAlpha(0);
+    this.enemyHealthBars.set(enemy, { bg, fill });
+
     // --- Spawn entry effect ---
     // Capture the final scale set by setupEnemy/configureEnemySpriteDisplay
     const targetScaleX = enemy.sprite.scaleX;
@@ -124,8 +138,9 @@ export class EnemyManager {
       this.enemies.splice(enemyIndex, 1);
     }
 
-    // Shadow cleanup right away
+    // Shadow and health bar cleanup right away
     this.cleanupEnemyShadow(enemy);
+    this.cleanupEnemyHealthBar(enemy);
 
     // Notify level manager (wave tracking)
     const enemyId = enemy.sprite.getData('enemyId');
@@ -241,6 +256,23 @@ export class EnemyManager {
         
         // Update depth based on Y position for proper layering
         enemy.sprite.setDepth(enemy.sprite.y);
+
+        // Update enemy health bar
+        const bar = this.enemyHealthBars.get(enemy);
+        if (bar) {
+          const BAR_W   = 30;
+          const BAR_H   = 4;
+          const barX    = enemy.sprite.x;
+          const barY    = enemy.sprite.y - enemy.sprite.displayHeight * enemy.sprite.originY - 6;
+          const pct     = Math.max(0, enemy.getHealth() / enemy.getMaxHealth());
+          const damaged = pct < 1;
+
+          bar.bg.setPosition(barX, barY).setAlpha(damaged ? 0.85 : 0);
+          bar.fill.setPosition(barX - BAR_W / 2, barY).setDisplaySize(BAR_W * pct, BAR_H - 1);
+          // Color: green → orange → red
+          const fillColor = pct > 0.5 ? 0x44ff44 : pct > 0.25 ? 0xff8800 : 0xff3333;
+          bar.fill.setFillStyle(fillColor).setAlpha(damaged ? 0.95 : 0);
+        }
       } catch (error) {
         console.warn('[EnemyManager] Error updating enemy:', error);
       }
@@ -266,6 +298,18 @@ export class EnemyManager {
         shadow.destroy();
       }
       this.enemyShadows.delete(enemy);
+    }
+  }
+
+  /**
+   * Clean up enemy health bar
+   */
+  private cleanupEnemyHealthBar(enemy: Enemy): void {
+    const bar = this.enemyHealthBars.get(enemy);
+    if (bar) {
+      bar.bg.destroy();
+      bar.fill.destroy();
+      this.enemyHealthBars.delete(enemy);
     }
   }
 

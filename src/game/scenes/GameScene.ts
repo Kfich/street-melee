@@ -97,9 +97,13 @@ export class GameScene extends Phaser.Scene {
   private damageVignette!: Phaser.GameObjects.Rectangle;
   private lowHealthVignette!: Phaser.GameObjects.Rectangle;
   private lowHealthTween?: Phaser.Tweens.Tween;
+  // Off-screen enemy direction indicators
+  private offScreenArrows!: Phaser.GameObjects.Graphics;
   // Run-stats tracking for the victory screen
   private enemyKillCount: number = 0;
   private maxComboReached: number = 0;
+  // Last activated checkpoint X position (null = none activated yet)
+  private lastCheckpointX: number | null = null;
 
   // Remote player rendering (socket-id → objects). No physics, server-driven only.
   private remotePlayers: Map<string, Phaser.GameObjects.Sprite> = new Map();
@@ -118,6 +122,7 @@ export class GameScene extends Phaser.Scene {
     // Reset initialization flag
     this.isInitialized = false;
     this.levelCompleteTriggered = false;
+    this.lastCheckpointX = null;
 
     // Initialize with character selections
     this.data.set('player1Character', data.player1Character || 'axel');
@@ -264,6 +269,9 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0).setDepth(1900).setAlpha(0);
     this.lowHealthVignette = this.add.rectangle(width / 2, height / 2, width, height, 0xff2200, 0)
       .setScrollFactor(0).setDepth(1899).setAlpha(0);
+
+    // Off-screen enemy arrows — Graphics object drawn fresh each frame
+    this.offScreenArrows = this.add.graphics().setScrollFactor(0).setDepth(1895);
 
     // Create players (after ground is created)
     this.createPlayers(width, height);
@@ -787,7 +795,8 @@ export class GameScene extends Phaser.Scene {
     // Wave events
     this.events.on('waveStarted', (wave: any) => {
       const waveNumber = wave.waveNumber || wave;
-      console.log(`Wave ${waveNumber} started!`);
+      const totalWaves = this.levelManager?.getLevelData().waves.length ?? 0;
+      this.showWaveAnnouncement(waveNumber, totalWaves);
     });
 
     this.events.on('waveCompleted', (waveNumber: number) => {
@@ -800,8 +809,11 @@ export class GameScene extends Phaser.Scene {
 
     // Checkpoint events
     this.events.on('checkpointActivated', (checkpoint: any) => {
-      console.log(`Checkpoint ${checkpoint.id} activated at (${checkpoint.x}, ${checkpoint.y})`);
-      // Could add save state functionality here
+      this.lastCheckpointX = checkpoint.x;
+      // Brief visual + audio feedback
+      if (this.audioManager) {
+        this.audioManager.playSting('sting_wave_clear');
+      }
     });
 
     // Level progression
@@ -1597,7 +1609,8 @@ export class GameScene extends Phaser.Scene {
         // all combat state (knockedDown, invincibility, cooldowns, tweens, etc.)
         if (this.playerLives > 0 && this.players[0]) {
           const player = this.players[0];
-          const safeX = Math.max(100, this.cameras.main.scrollX + 120);
+          // Respawn at last checkpoint, or just ahead of current camera view
+          const safeX = this.lastCheckpointX ?? Math.max(100, this.cameras.main.scrollX + 120);
           // Use the ground Y position — the dead sprite's Y may be off-screen
           const groundY = this.cameras.main.height - GameConfig.GROUND_OFFSET;
           player.reset(safeX, groundY);
@@ -2194,6 +2207,9 @@ export class GameScene extends Phaser.Scene {
       this.enemyManager.update();
     }
 
+    // Off-screen enemy direction indicators
+    this.updateOffScreenIndicators();
+
     // Health bars are now in the HUD - no need to update overhead health bars
     // Boss health bars are updated separately
 
@@ -2272,6 +2288,8 @@ export class GameScene extends Phaser.Scene {
 
     // Reset so checkVictory can fire again for the next level
     this.levelCompleteTriggered = false;
+    // Clear checkpoint so respawns in the new level default to camera position
+    this.lastCheckpointX = null;
 
     const currentLevelIndex = this.levelManager.getCurrentLevel() - 1;
     const nextLevelIndex = currentLevelIndex + 1;
@@ -2489,6 +2507,134 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  /** Brief "WAVE X OF Y" card shown when a new enemy wave triggers. */
+  private showWaveAnnouncement(waveNumber: number, totalWaves: number): void {
+    const { width, height } = this.cameras.main;
+    const label = totalWaves > 1 ? `WAVE ${waveNumber} / ${totalWaves}` : `WAVE ${waveNumber}`;
+
+    // Slim background bar
+    const bar = this.add.rectangle(width / 2, height * 0.18, width * 0.55, 44, 0x000000, 0.72)
+      .setScrollFactor(0).setDepth(1002).setAlpha(0);
+
+    const text = this.add.text(width / 2, height * 0.18, label, {
+      fontFamily: '"Press Start 2P", monospace',
+      fontSize: '15px',
+      color: '#ffcc00',
+      stroke: '#000000',
+      strokeThickness: 4,
+    }).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(1003).setAlpha(0);
+
+    const FADE_IN  = 200;
+    const HOLD     = 1000;
+    const FADE_OUT = 350;
+
+    this.tweens.add({
+      targets: [bar, text],
+      alpha: 1,
+      duration: FADE_IN,
+      ease: 'Linear',
+      onComplete: () => {
+        this.time.delayedCall(HOLD, () => {
+          this.tweens.add({
+            targets: [bar, text],
+            alpha: 0,
+            duration: FADE_OUT,
+            ease: 'Linear',
+            onComplete: () => { bar.destroy(); text.destroy(); },
+          });
+        });
+      },
+    });
+  }
+
+  /**
+   * Redraws the off-screen enemy direction arrows each frame.
+   * Arrows are drawn at the screen edge nearest to each off-screen enemy,
+   * pointing inward.  They're fixed to the camera (scrollFactor 0).
+   */
+  private updateOffScreenIndicators(): void {
+    if (!this.offScreenArrows || !this.offScreenArrows.active) return;
+
+    this.offScreenArrows.clear();
+
+    const cam    = this.cameras.main;
+    const sw     = cam.width;
+    const sh     = cam.height;
+    const left   = cam.scrollX;
+    const top    = cam.scrollY;
+    const right  = left + sw;
+    const bottom = top  + sh;
+
+    const MARGIN  = 18; // px from screen edge to arrow tip
+    const ARROW_W = 9;  // half-width of arrow base
+    const ARROW_H = 14; // depth of arrow
+
+    const enemies = this.entityManager?.getEnemies() ?? [];
+
+    enemies.forEach(enemy => {
+      if (!enemy?.sprite?.active) return;
+
+      const ex = enemy.sprite.x;
+      const ey = enemy.sprite.y;
+
+      // Skip enemies that are fully visible inside the viewport
+      const onScreen = (ex >= left && ex <= right && ey >= top && ey <= bottom);
+      if (onScreen) return;
+
+      // Convert world coords to screen coords for the arrow tip
+      const sx = ex - left; // screen-space X
+      const sy = ey - top;  // screen-space Y
+
+      // Clamp to a strip near the edge and determine orientation
+      let ax: number, ay: number;
+      let angle: number; // arrow points in this direction (radians)
+
+      if (sx < 0) {
+        // Enemy is to the LEFT
+        ax    = MARGIN;
+        ay    = Phaser.Math.Clamp(sy, MARGIN + ARROW_W, sh - MARGIN - ARROW_W);
+        angle = Math.PI; // tip points left
+      } else if (sx > sw) {
+        // Enemy is to the RIGHT
+        ax    = sw - MARGIN;
+        ay    = Phaser.Math.Clamp(sy, MARGIN + ARROW_W, sh - MARGIN - ARROW_W);
+        angle = 0; // tip points right
+      } else if (sy < 0) {
+        // Enemy is ABOVE (rare in a horizontal scroller but handle it)
+        ax    = Phaser.Math.Clamp(sx, MARGIN + ARROW_W, sw - MARGIN - ARROW_W);
+        ay    = MARGIN;
+        angle = -Math.PI / 2;
+      } else {
+        // Enemy is BELOW
+        ax    = Phaser.Math.Clamp(sx, MARGIN + ARROW_W, sw - MARGIN - ARROW_W);
+        ay    = sh - MARGIN;
+        angle = Math.PI / 2;
+      }
+
+      // Draw a filled triangle (arrow) pointing toward the enemy
+      // The tip is at (ax, ay) in screen space, pointing in `angle`.
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+
+      // Arrow tip
+      const tipX = ax + cos * ARROW_H;
+      const tipY = ay + sin * ARROW_H;
+      // Base left
+      const blX = ax - sin * ARROW_W - cos * 0;
+      const blY = ay + cos * ARROW_W - sin * 0;
+      // Base right
+      const brX = ax + sin * ARROW_W;
+      const brY = ay - cos * ARROW_W;
+
+      this.offScreenArrows.fillStyle(0xff4400, 0.85);
+      this.offScreenArrows.fillTriangle(tipX, tipY, blX, blY, brX, brY);
+
+      // Thin white border for readability
+      this.offScreenArrows.lineStyle(1.5, 0xffffff, 0.6);
+      this.offScreenArrows.strokeTriangle(tipX, tipY, blX, blY, brX, brY);
+    });
+  }
+
   /**
    * Update player depths and enforce physics constraints after physics step
    * Consolidated from multiple forEach loops for better performance
@@ -2657,6 +2803,9 @@ export class GameScene extends Phaser.Scene {
     }
     if (this.visualEffects) {
       // VisualEffects cleanup if needed
+    }
+    if (this.offScreenArrows) {
+      this.offScreenArrows.destroy();
     }
   }
 
