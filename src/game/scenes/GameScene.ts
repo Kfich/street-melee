@@ -101,6 +101,10 @@ export class GameScene extends Phaser.Scene {
   private offScreenArrows!: Phaser.GameObjects.Graphics;
   // Combo bonus multiplier overlay (shown while a combo is active)
   private comboBonusText?: Phaser.GameObjects.Text;
+  // Weapon pickup proximity prompt
+  private weaponPromptText?: Phaser.GameObjects.Text;
+  // Score milestone tracking
+  private lastMilestoneScore: number = 0;
   // Run-stats tracking for the victory screen
   private enemyKillCount: number = 0;
   private maxComboReached: number = 0;
@@ -274,6 +278,15 @@ export class GameScene extends Phaser.Scene {
 
     // Off-screen enemy arrows — Graphics object drawn fresh each frame
     this.offScreenArrows = this.add.graphics().setScrollFactor(0).setDepth(1895);
+
+    // Weapon pickup proximity prompt (world-space, follows weapon)
+    this.weaponPromptText = this.add.text(0, 0, '▲ GRAB', {
+      fontFamily: '"Press Start 2P", monospace',
+      fontSize: '7px',
+      color: '#ffff88',
+      stroke: '#000000',
+      strokeThickness: 2,
+    }).setOrigin(0.5, 1).setDepth(1002).setVisible(false);
 
     // Create players (after ground is created)
     this.createPlayers(width, height);
@@ -728,6 +741,11 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
+    // Boss phase transition overlay
+    this.events.on('bossPhaseChange', (data: { phase: number }) => {
+      this.showBossPhaseCard(data.phase);
+    });
+
     // Boss defeat: duck boss music, play sting_boss_defeat (+ optional
     // character-specific win sting on the final boss of the level), then
     // either spawn the next queued boss or end the level.
@@ -998,6 +1016,7 @@ export class GameScene extends Phaser.Scene {
         if (data.points) {
           this.playerScore += data.points;
           this.widgetManager.addScore(data.points);
+          this.checkScoreMilestone();
         }
         this.widgetManager.incrementPickup();
       }
@@ -1944,6 +1963,7 @@ export class GameScene extends Phaser.Scene {
     if (this.widgetManager) {
       this.widgetManager.addScore(finalScore);
     }
+    this.checkScoreMilestone();
     
     // Show score popup
     if (entity.sprite) {
@@ -2238,6 +2258,9 @@ export class GameScene extends Phaser.Scene {
       this.bossManager.update();
       this.bossManager.updateHealthBar();
     }
+
+    // Weapon pickup proximity prompt
+    this.updateWeaponPrompt();
     
     // Periodic cleanup of arrays (every N frames instead of every frame)
     this.cleanupCounter++;
@@ -2777,9 +2800,126 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  /** "PHASE 2" / "ENRAGED!" banner on boss phase transition. */
+  private showBossPhaseCard(phase: number): void {
+    const { width, height } = this.cameras.main;
+    const isEnraged = phase >= 3;
+    const label    = isEnraged ? 'ENRAGED!' : `PHASE ${phase}`;
+    const color    = isEnraged ? '#ff2222' : '#ff8800';
+    const fontSize = isEnraged ? '26px' : '22px';
+
+    const bar = this.add.rectangle(width / 2, height * 0.38, width * 0.65, 52, 0x000000, 0.8)
+      .setScrollFactor(0).setDepth(1003).setAlpha(0);
+
+    const text = this.add.text(width / 2, height * 0.38, label, {
+      fontFamily: '"Press Start 2P", monospace',
+      fontSize,
+      color,
+      stroke: '#000000',
+      strokeThickness: 5,
+      fontStyle: 'bold',
+    }).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(1004).setAlpha(0).setScale(isEnraged ? 0.4 : 0.7);
+
+    this.tweens.add({
+      targets: [bar, text],
+      alpha: 1,
+      scaleX: 1,
+      scaleY: 1,
+      duration: 250,
+      ease: 'Back.easeOut',
+      onComplete: () => {
+        this.time.delayedCall(1000, () => {
+          this.tweens.add({
+            targets: [bar, text],
+            alpha: 0,
+            duration: 350,
+            ease: 'Linear',
+            onComplete: () => { bar.destroy(); text.destroy(); },
+          });
+        });
+      },
+    });
+  }
+
+  /**
+   * Show a score milestone callout when crossing 5 k / 10 k / 25 k / 50 k / 100 k.
+   */
+  private checkScoreMilestone(): void {
+    const MILESTONES = [5000, 10000, 25000, 50000, 100000, 200000, 500000];
+    const crossed = MILESTONES.find(
+      m => this.playerScore >= m && this.lastMilestoneScore < m
+    );
+    if (!crossed) return;
+    this.lastMilestoneScore = crossed;
+
+    const { width, height } = this.cameras.main;
+    const label = `${crossed.toLocaleString()} PTS!`;
+
+    const bar = this.add.rectangle(width / 2, height * 0.12, width * 0.5, 36, 0x000000, 0.72)
+      .setScrollFactor(0).setDepth(1002).setAlpha(0);
+
+    const text = this.add.text(width / 2, height * 0.12, label, {
+      fontFamily: '"Press Start 2P", monospace',
+      fontSize: '11px',
+      color: '#ffffff',
+      stroke: '#000000',
+      strokeThickness: 3,
+    }).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(1003).setAlpha(0);
+
+    this.tweens.add({
+      targets: [bar, text],
+      alpha: 1,
+      duration: 180,
+      ease: 'Linear',
+      onComplete: () => {
+        this.time.delayedCall(900, () => {
+          this.tweens.add({
+            targets: [bar, text],
+            alpha: 0,
+            duration: 300,
+            ease: 'Linear',
+            onComplete: () => { bar.destroy(); text.destroy(); },
+          });
+        });
+      },
+    });
+  }
+
+  /**
+   * Each frame: if a player is within 55 px of an unheld weapon, position the
+   * "▲ GRAB" prompt above it.  Otherwise hide it.
+   */
+  private updateWeaponPrompt(): void {
+    if (!this.weaponPromptText?.active || !this.weaponManager || !this.players[0]?.sprite?.active) {
+      this.weaponPromptText?.setVisible(false);
+      return;
+    }
+
+    const player = this.players[0];
+    const RANGE  = 55;
+    let nearest: { x: number; y: number; dist: number } | null = null;
+
+    for (const weapon of (this.weaponManager as any).weapons as Array<{ sprite: Phaser.GameObjects.Sprite; isHeld: () => boolean; shouldDestroy: () => boolean }>) {
+      if (!weapon?.sprite?.active || weapon.isHeld() || weapon.shouldDestroy()) continue;
+      const dist = Phaser.Math.Distance.Between(
+        player.sprite.x, player.sprite.y,
+        weapon.sprite.x, weapon.sprite.y
+      );
+      if (dist < RANGE && (!nearest || dist < nearest.dist)) {
+        nearest = { x: weapon.sprite.x, y: weapon.sprite.y - weapon.sprite.displayHeight / 2 - 6, dist };
+      }
+    }
+
+    if (nearest) {
+      this.weaponPromptText.setPosition(nearest.x, nearest.y).setVisible(true);
+    } else {
+      this.weaponPromptText.setVisible(false);
+    }
+  }
+
   /**
    * Update player depths and enforce physics constraints after physics step
-   * Consolidated from multiple forEach loops for better performance
+   * Consolidated from multiple Forbes loops for better performance
    */
   private updatePlayersPostPhysics(): void {
     const roomHeight = this.roomManager?.getRoomHeight() || this.cameras.main.height;
@@ -2963,6 +3103,7 @@ export class GameScene extends Phaser.Scene {
     this.events.off('levelTransitionComplete');
     this.events.off('entityDefeated');
     this.events.off('bossDefeated');
+    this.events.off('bossPhaseChange');
     this.events.off('bossEntranceStart');
     this.events.off('bossEntranceEnd');
     this.events.off('weaponSpawned');
