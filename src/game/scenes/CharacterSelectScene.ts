@@ -12,7 +12,6 @@ export class CharacterSelectScene extends BaseMenuScene {
   private isMultiplayer: boolean = false;
   private roomId?: string;
   private characterBoxes: CharacterSelectBox[] = [];
-  private playerText?: Phaser.GameObjects.Text;
   private startButton?: MenuButton;
   private previewPanel?: CharacterPreviewPanel;
   private selectedIndex: number = 0;
@@ -50,7 +49,7 @@ export class CharacterSelectScene extends BaseMenuScene {
     const { width, height } = this.cameras.main;
 
     // Title
-    const titleText = this.isMultiplayer ? 'SELECT CHARACTERS' : 'SELECT CHARACTER';
+    const titleText = this.isMultiplayer ? 'SELECT YOUR CHARACTER' : 'SELECT CHARACTER';
     this.add.text(width / 2, 38, titleText, {
       fontSize: '30px',
       fontFamily: this.theme.typography.titleFont,
@@ -61,9 +60,9 @@ export class CharacterSelectScene extends BaseMenuScene {
     }).setOrigin(0.5).setDepth(1001);
 
     // Player indicator
-    this.playerText = this.add.text(
+    this.add.text(
       width / 2, 90,
-      this.isMultiplayer ? `PLAYER ${this.currentPlayer + 1}` : 'PLAYER 1',
+      'PLAYER 1',
       {
         fontSize: '16px',
         fontFamily: this.theme.typography.itemFont,
@@ -187,31 +186,24 @@ export class CharacterSelectScene extends BaseMenuScene {
       this.audioManager.playSting('sting_menu_confirm');
     }
 
-    // For single player, start game immediately after selection
-    if (!this.isMultiplayer && this.currentPlayer === 0) {
-      this.startGame();
+    // Single player or network multiplayer: start immediately after local selection
+    if (!this.isMultiplayer || this.currentPlayer === 0) {
+      if (this.isMultiplayer) {
+        // Network multiplayer: P2's character comes from the remote state — no
+        // need to pick it locally.  Show START button instead.
+        if (this.startButton) {
+          this.startButton.setVisible(true);
+        }
+      } else {
+        this.startGame();
+      }
       return;
     }
 
-    // For multiplayer, move to next player or show start button
-    if (this.currentPlayer === 0) {
-      this.currentPlayer = 1;
-      if (this.playerText) {
-        this.playerText.setText('PLAYER 2');
-      }
-      // Clear selection for next player
-      this.characterBoxes.forEach((box) => box.setSelected(false));
-      this.selectedIndex = 0;
-      this.updateSelection();
-      
-      // Play transition sound
-      if (this.audioManager) {
-        this.audioManager.playSound('menuSelect', 0.7);
-      }
-    } else {
-      if (this.startButton) {
-        this.startButton.setVisible(true);
-      }
+    // Local co-op (isMultiplayer === false is already handled above, so this
+    // branch is only reached in a future local-co-op mode, kept for safety)
+    if (this.startButton) {
+      this.startButton.setVisible(true);
     }
   }
 
@@ -219,13 +211,9 @@ export class CharacterSelectScene extends BaseMenuScene {
    * Check if game can be started
    */
   private canStartGame(): boolean {
-    if (!this.isMultiplayer) {
-      // Single player only needs player 1
-      return this.selectedCharacters[0] !== null;
-    } else {
-      // Multiplayer needs both players
-      return this.selectedCharacters[0] !== null && this.selectedCharacters[1] !== null;
-    }
+    // Both single-player and network multiplayer only need the local player's
+    // character selection.  P2's character arrives via network state updates.
+    return this.selectedCharacters[0] !== null;
   }
 
   startGame() {

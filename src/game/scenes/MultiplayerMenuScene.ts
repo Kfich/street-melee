@@ -1,9 +1,9 @@
 import { BaseMenuScene } from '../../ui/menu/BaseMenuScene';
 import { MenuButton } from '../../ui/menu/MenuButton';
-import { MultiplayerClient } from '../../multiplayer/Client';
+import { getSharedMultiplayerClient, destroySharedMultiplayerClient } from '../../multiplayer/Client';
 
 export class MultiplayerMenuScene extends BaseMenuScene {
-  private multiplayerClient?: MultiplayerClient;
+  private multiplayerClient?: ReturnType<typeof getSharedMultiplayerClient>;
   private roomIdInput?: Phaser.GameObjects.DOMElement;
   private roomIdText?: Phaser.GameObjects.Text;
   private statusText?: Phaser.GameObjects.Text;
@@ -39,8 +39,9 @@ export class MultiplayerMenuScene extends BaseMenuScene {
     });
     this.statusText.setOrigin(0.5).setDepth(1001);
 
-    // Initialize multiplayer client
-    this.multiplayerClient = new MultiplayerClient();
+    // Use the module-level singleton so the socket connection (and room membership)
+    // survive the transition into CharacterSelectScene and GameScene.
+    this.multiplayerClient = getSharedMultiplayerClient();
     this.setupMultiplayerCallbacks();
 
     // Create Room button
@@ -129,13 +130,17 @@ export class MultiplayerMenuScene extends BaseMenuScene {
       'BACK',
       this.theme,
       () => {
-        this.multiplayerClient?.disconnect();
+        // Intentionally leaving multiplayer — destroy the singleton so the next
+        // visit to this scene starts fresh.
+        destroySharedMultiplayerClient();
         this.scene.start('MainMenuScene');
       }
     );
 
-    // Connect to server
-    this.multiplayerClient.connect();
+    // Connect only if not already connected (singleton may have reconnected)
+    if (!this.multiplayerClient.getIsConnected()) {
+      this.multiplayerClient.connect();
+    }
   }
 
   private setupMultiplayerCallbacks() {
@@ -203,21 +208,13 @@ export class MultiplayerMenuScene extends BaseMenuScene {
   }
 
   shutdown() {
-    if (this.createButton) {
-      this.createButton.destroy();
-    }
-    if (this.joinButton) {
-      this.joinButton.destroy();
-    }
-    if (this.backButton) {
-      this.backButton.destroy();
-    }
-    if (this.startButton) {
-      this.startButton.destroy();
-    }
-    if (this.multiplayerClient) {
-      this.multiplayerClient.disconnect();
-    }
+    this.createButton?.destroy();
+    this.joinButton?.destroy();
+    this.backButton?.destroy();
+    this.startButton?.destroy();
+    // Do NOT disconnect the singleton client here — the connection must survive
+    // the transition to CharacterSelectScene and GameScene.  The client is only
+    // destroyed when the player explicitly presses BACK.
   }
 }
 

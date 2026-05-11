@@ -2,6 +2,27 @@ import { io, Socket } from 'socket.io-client';
 import { PlayerInput } from '../types/GameTypes';
 import { CharacterType } from '../game/types/CharacterType';
 
+// ── Module-level singleton ────────────────────────────────────────────────────
+// Shared across all Phaser scenes so the socket connection (and room membership)
+// survive scene transitions.  Use destroySharedMultiplayerClient() only when the
+// player explicitly leaves multiplayer (e.g. pressing BACK on the lobby screen).
+let _sharedClient: MultiplayerClient | null = null;
+
+export function getSharedMultiplayerClient(): MultiplayerClient {
+  if (!_sharedClient) {
+    _sharedClient = new MultiplayerClient();
+  }
+  return _sharedClient;
+}
+
+export function destroySharedMultiplayerClient(): void {
+  if (_sharedClient) {
+    _sharedClient.disconnect();
+    _sharedClient = null;
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 export interface PlayerState {
   id: string;
   x: number;
@@ -29,7 +50,6 @@ export class MultiplayerClient {
   private isConnected: boolean = false;
   private serverUrl: string;
   private onStateUpdate?: (state: GameState) => void;
-  // @ts-ignore - Set via callback, called when player joins
   private onPlayerJoined?: (playerId: string) => void;
   private onPlayerLeft?: (playerId: string) => void;
   private onRoomCreated?: (roomId: string) => void;
@@ -103,6 +123,12 @@ export class MultiplayerClient {
           timestamp: Date.now()
         };
         this.onStateUpdate(gameState);
+      }
+    });
+
+    this.socket.on('playerJoined', (data: { playerId: string }) => {
+      if (this.onPlayerJoined) {
+        this.onPlayerJoined(data.playerId);
       }
     });
 

@@ -28,7 +28,8 @@ import { RoomManager } from '../../systems/background/RoomManager';
 import { VisualEffects } from '../../systems/effects/VisualEffects';
 import { AudioManager } from '../../systems/audio/AudioManager';
 import { MusicContext } from '../../systems/audio/MusicState';
-import { MultiplayerClient, GameState, PlayerState } from '../../multiplayer/Client';
+import { getSharedMultiplayerClient, destroySharedMultiplayerClient, GameState, PlayerState } from '../../multiplayer/Client';
+import type { MultiplayerClient } from '../../multiplayer/Client';
 import { BossHealthBar } from '../../ui/BossHealthBar';
 import { StoryManager, LevelTransitionSystem, DialogueSystem, NarrativeSystem } from '../../systems/story';
 import { STORY_REGISTRY } from '../../systems/story/StoryData';
@@ -118,6 +119,7 @@ export class GameScene extends Phaser.Scene {
 
   // Remote player rendering (socket-id → objects). No physics, server-driven only.
   private remotePlayers: Map<string, Phaser.GameObjects.Sprite> = new Map();
+  private waitingOverlay?: { panel: Phaser.GameObjects.Rectangle; text: Phaser.GameObjects.Text };
   private remotePlayerUI: Map<string, {
     healthBarBg: Phaser.GameObjects.Rectangle;
     healthBar: Phaser.GameObjects.Rectangle;
@@ -1731,21 +1733,18 @@ export class GameScene extends Phaser.Scene {
   }
 
   private initializeMultiplayer() {
-    this.multiplayerClient = new MultiplayerClient();
-    
-    // Set up callbacks
-    this.multiplayerClient.onRoomCreatedCallback((roomId) => {
-      console.log(`Room created: ${roomId}`);
-      this.data.set('roomId', roomId);
-    });
-
-    this.multiplayerClient.onRoomJoinedCallback((roomId) => {
-      console.log(`Joined room: ${roomId}`);
-      this.data.set('roomId', roomId);
-    });
+    // Re-use the singleton that was created and connected in MultiplayerMenuScene.
+    // The socket is already open and the room is already joined — do not call
+    // connect() / createRoom() / joinRoom() again.
+    this.multiplayerClient = getSharedMultiplayerClient();
 
     this.multiplayerClient.onStateUpdateCallback((gameState) => {
       this.handleRemotePlayerUpdate(gameState);
+    });
+
+    this.multiplayerClient.onPlayerJoinedCallback((_playerId) => {
+      // P2 just joined — dismiss the waiting overlay
+      this.dismissWaitingOverlay();
     });
 
     this.multiplayerClient.onPlayerLeftCallback((playerId) => {
@@ -1768,25 +1767,36 @@ export class GameScene extends Phaser.Scene {
       console.error(`Multiplayer error: ${error}`);
     });
 
-    // Connect to server
-    this.multiplayerClient.connect();
-    
-    // Create or join room based on scene data
-    const roomId = this.data.get('roomId');
-    if (roomId) {
-      // Wait for connection before joining
-      setTimeout(() => {
-        if (this.multiplayerClient?.getIsConnected()) {
-          this.multiplayerClient.joinRoom(roomId);
-        }
-      }, 500);
-    } else {
-      // Wait for connection before creating
-      setTimeout(() => {
-        if (this.multiplayerClient?.getIsConnected()) {
-          this.multiplayerClient.createRoom();
-        }
-      }, 500);
+    // Show "Waiting for Player 2" until the remote player's first state update
+    // arrives (covers the case where P2 connected before this callback was set).
+    this.showWaitingOverlay();
+  }
+
+  /** Semi-transparent overlay shown until the remote player appears. */
+  private showWaitingOverlay() {
+    const { width, height } = this.cameras.main;
+    const depth = 9000;
+
+    const panel = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.55);
+    panel.setScrollFactor(0).setDepth(depth);
+
+    const text = this.add.text(width / 2, height / 2, 'WAITING FOR PLAYER 2...', {
+      fontFamily: '"Press Start 2P", monospace',
+      fontSize: '14px',
+      color: '#ffff00',
+      stroke: '#000000',
+      strokeThickness: 4,
+    });
+    text.setOrigin(0.5).setScrollFactor(0).setDepth(depth + 1);
+
+    this.waitingOverlay = { panel, text };
+  }
+
+  private dismissWaitingOverlay() {
+    if (this.waitingOverlay) {
+      this.waitingOverlay.panel.destroy();
+      this.waitingOverlay.text.destroy();
+      this.waitingOverlay = undefined;
     }
   }
 
@@ -1797,6 +1807,8 @@ export class GameScene extends Phaser.Scene {
       if (socketId === ownId) return;
       if (!this.remotePlayers.has(socketId)) {
         this.spawnRemotePlayer(socketId, playerState);
+        // First time we see this remote player — dismiss the waiting overlay
+        this.dismissWaitingOverlay();
       }
       this.syncRemotePlayer(socketId, playerState);
     });
@@ -3079,9 +3091,12 @@ export class GameScene extends Phaser.Scene {
     if (this.itemPool) {
       this.itemPool.clear();
     }
-    if (this.multiplayerClient) {
-      this.multiplayerClient.disconnect();
+    if (this.isMultiplayer) {
+      // Destroy the singleton so the next multiplayer session starts fresh
+      destroySharedMultiplayerClient();
+      this.multiplayerClient = undefined;
     }
+    this.dismissWaitingOverlay();
     this.remotePlayers.forEach(sprite => sprite.destroy());
     this.remotePlayers.clear();
     this.remotePlayerUI.forEach(ui => {

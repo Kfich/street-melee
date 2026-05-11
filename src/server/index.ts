@@ -75,6 +75,8 @@ io.on('connection', (socket) => {
     if (room && room.players.size < 2) {
       socket.join(roomId);
       socket.emit('roomJoined', { roomId });
+      // Notify existing room members that a new player has joined
+      socket.to(roomId).emit('playerJoined', { playerId: socket.id });
       console.log(`Player ${socket.id} joined room ${roomId}`);
     } else {
       socket.emit('roomJoinError', { message: 'Room is full or does not exist' });
