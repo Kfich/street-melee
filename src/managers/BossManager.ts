@@ -103,8 +103,8 @@ export class BossManager {
     // Freeze the boss so it can't pursue the player during the cinematic
     boss.sprite.setActive(false);
 
-    // Notify GameScene to freeze player input
-    this.scene.events.emit('bossEntranceStart');
+    // Notify GameScene to freeze player input (pass bossType so scene can pick the right music)
+    this.scene.events.emit('bossEntranceStart', { bossType });
 
     // ── Camera flash ─────────────────────────────────────────────────
     this.scene.cameras.main.flash(300, 255, 255, 255);
