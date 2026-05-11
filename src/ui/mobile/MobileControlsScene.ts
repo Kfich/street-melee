@@ -21,6 +21,10 @@ export class MobileControlsScene extends Phaser.Scene {
   // Per-button visual drawers (normal / active states)
   private btnDrawers: Map<keyof TouchState, { normal: () => void; active: () => void }> = new Map();
 
+  // Stored handler references so shutdown() can remove them precisely
+  private _onPointerMove?: (pointer: Phaser.Input.Pointer) => void;
+  private _onPointerUp?: (pointer: Phaser.Input.Pointer) => void;
+
   constructor() {
     super({ key: 'MobileControlsScene' });
   }
@@ -250,15 +254,14 @@ export class MobileControlsScene extends Phaser.Scene {
   // ── Global pointer event handlers ────────────────────────────────────────
 
   private setupGlobalPointerEvents() {
-    // Track D-pad when the finger moves outside the zone
-    this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+    // Store handler references so shutdown() can remove exactly these listeners
+    this._onPointerMove = (pointer: Phaser.Input.Pointer) => {
       if (this.dpadPointers.has(pointer.id) && pointer.isDown) {
         this.updateDpad(pointer.x, pointer.y);
       }
-    });
+    };
 
-    // Unified pointerup — covers finger lifts anywhere on screen
-    this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+    this._onPointerUp = (pointer: Phaser.Input.Pointer) => {
       if (this.dpadPointers.has(pointer.id)) {
         this.dpadPointers.delete(pointer.id);
         if (this.dpadPointers.size === 0) {
@@ -271,12 +274,28 @@ export class MobileControlsScene extends Phaser.Scene {
         const drawer = this.btnDrawers.get(action);
         this.releaseButton(pointer.id, action, drawer?.normal ?? (() => {}));
       }
-    });
+    };
+
+    // Track D-pad when the finger moves outside the zone
+    this.input.on('pointermove', this._onPointerMove);
+    // Unified pointerup — covers finger lifts anywhere on screen
+    this.input.on('pointerup', this._onPointerUp);
   }
 
   // ── Lifecycle ────────────────────────────────────────────────────────────
 
   shutdown() {
+    // Remove global pointer handlers — must be done explicitly to prevent listener
+    // accumulation on scene restart (each launch() → create() adds a new pair).
+    if (this._onPointerMove) {
+      this.input.off('pointermove', this._onPointerMove);
+      this._onPointerMove = undefined;
+    }
+    if (this._onPointerUp) {
+      this.input.off('pointerup', this._onPointerUp);
+      this._onPointerUp = undefined;
+    }
+
     // Reset all touch state so no phantom inputs linger after scene stops
     (Object.keys(globalTouchState) as Array<keyof TouchState>).forEach(key => {
       globalTouchState[key] = false;
