@@ -718,9 +718,9 @@ export const LEVEL_CONFIGS: LevelData[] = [
         triggerX: 3500,
         enemies: [
           { type: 'donovan', x: 3600, y: 476, delay: 0 },
-          { type: 'donovan', x: 3700, y: 476, delay: 200 },
+          { type: 'galsia',  x: 3700, y: 476, delay: 200 },
           { type: 'donovan', x: 3800, y: 476, delay: 400 },
-          { type: 'galsia', x: 3900, y: 476, delay: 600 }
+          { type: 'galsia',  x: 3900, y: 476, delay: 600 }
         ]
       }
     ],
@@ -784,10 +784,10 @@ export const LEVEL_CONFIGS: LevelData[] = [
         triggerX: 3500,
         enemies: [
           { type: 'donovan', x: 3700, y: 476, delay: 0   },
-          { type: 'donovan', x: 3850, y: 476, delay: 200 },
-          { type: 'donovan', x: 4000, y: 476, delay: 400 },
           { type: 'galsia',  x: 3750, y: 490, delay: 100 },
-          { type: 'galsia',  x: 3950, y: 490, delay: 300 }
+          { type: 'donovan', x: 3850, y: 476, delay: 200 },
+          { type: 'galsia',  x: 3950, y: 490, delay: 300 },
+          { type: 'basic',   x: 4000, y: 476, delay: 500 }
         ]
       }
     ],
