@@ -66,6 +66,7 @@ export class EnemyManager {
     this.entityManager.add(enemy);
     enemy.sprite.setData('entity', enemy);
     enemy.sprite.setData('isEnemy', true);
+    enemy.sprite.setData('enemyType', enemy.getEnemyType());
 
     // Depth from Y for proper layering
     enemy.sprite.setDepth(enemy.sprite.y);

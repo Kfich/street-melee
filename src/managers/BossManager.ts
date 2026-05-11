@@ -288,16 +288,13 @@ export class BossManager {
   }
 
   /**
-   * Clean up bosses array (removes stale references)
+   * Clean up bosses array (removes truly destroyed sprites).
+   * A boss whose sprite.active is false may be mid-entrance cinematic — keep it.
    */
   cleanup(): void {
-    const activeBosses = this.entityManager.getBosses();
-    this.bosses = this.bosses.filter(boss => {
-      if (!boss || !boss.sprite || !boss.sprite.active) {
-        return false;
-      }
-      return activeBosses.includes(boss);
-    });
+    this.bosses = this.bosses.filter(
+      boss => boss?.sprite && boss.sprite.scene != null
+    );
   }
 
   /**
