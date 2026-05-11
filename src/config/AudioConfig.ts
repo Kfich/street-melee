@@ -150,12 +150,12 @@ export const SOUND_EFFECTS: Record<string, SoundEffectConfig> = {
   // Environmental sounds
   policeSiren: {
     key: 'policeSiren',
-    path: 'assets/sounds/police-siren.wav',
+    path: 'assets/sounds/police-siren.mp3',
     volume: 0.5
   },
   prisonSiren: {
     key: 'prisonSiren',
-    path: 'assets/sounds/prison-siren.wav',
+    path: 'assets/sounds/prison-siren.mp3',
     volume: 0.5
   }
 };
