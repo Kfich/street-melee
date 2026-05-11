@@ -63,6 +63,36 @@ export class PauseScene extends BaseMenuScene {
     this.menuContainer.addButton('RESUME', () => this.resume());
     this.menuContainer.addButton('SETTINGS', () => this.openSettings());
     this.menuContainer.addButton('MAIN MENU', () => this.returnToMenu());
+
+    // ── Quick controls reference ──────────────────────────────────────────
+    const FONT   = this.theme.typography.itemFont;
+    const LABEL  = this.theme.typography.labelFont ?? FONT;
+    const cols = [
+      { label: 'MOVE',    key: 'ARROWS / WASD' },
+      { label: 'ATTACK',  key: 'X / B' },
+      { label: 'JUMP',    key: 'SPACE / W' },
+      { label: 'SPECIAL', key: 'Z / A' },
+      { label: 'GRAB',    key: 'CLOSE + ATTACK' },
+      { label: 'THROW',   key: 'DIR + ATK (GRAB)' },
+    ];
+
+    const startY = height * 0.76;
+    const ROW_H  = 18;
+
+    this.add.text(width / 2, startY - 12, '── CONTROLS ──', {
+      fontSize: '7px', fontFamily: LABEL, color: '#444466',
+    }).setOrigin(0.5).setDepth(1001);
+
+    cols.forEach(({ label, key }, i) => {
+      const y = startY + i * ROW_H;
+      this.add.text(width / 2 - 8, y, label, {
+        fontSize: '8px', fontFamily: FONT, color: '#6666aa',
+      }).setOrigin(1, 0.5).setDepth(1001);
+
+      this.add.text(width / 2 + 8, y, key, {
+        fontSize: '8px', fontFamily: FONT, color: '#888899',
+      }).setOrigin(0, 0.5).setDepth(1001);
+    });
   }
 
   protected playMenuMusic() {

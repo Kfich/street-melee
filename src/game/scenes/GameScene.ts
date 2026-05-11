@@ -710,12 +710,15 @@ export class GameScene extends Phaser.Scene {
     });
 
     // Boss entrance cinematic — freeze player input and switch to boss music
-    this.events.on('bossEntranceStart', () => {
+    this.events.on('bossEntranceStart', (data?: { bossType?: string }) => {
       if (this.playerUpdateManager) {
         this.playerUpdateManager.setInputFrozen(true);
       }
       if (this.audioManager) {
-        const bossTrack = getMusicForScene(this.currentSceneNumber, 'boss') ?? 'boss';
+        // Tony (final boss) gets the more intense track; all others use the scene map default
+        const bossTrack = data?.bossType === 'tony'
+          ? 'bossFight'
+          : (getMusicForScene(this.currentSceneNumber, 'boss') ?? 'boss');
         this.audioManager.playMusicWithContext(bossTrack, MusicContext.BOSS, true);
       }
     });
@@ -1624,12 +1627,17 @@ export class GameScene extends Phaser.Scene {
           const safeX = this.lastCheckpointX ?? Math.max(100, this.cameras.main.scrollX + 120);
           // Use the ground Y position — the dead sprite's Y may be off-screen
           const groundY = this.cameras.main.height - GameConfig.GROUND_OFFSET;
-          player.reset(safeX, groundY);
 
-          // Update widget manager with restored player
-          if (this.widgetManager) {
-            this.widgetManager.setPlayer(player);
-          }
+          // Show PLAYER DOWN card, then respawn after a brief hold
+          this.showPlayerDownCard(() => {
+            player.reset(safeX, groundY);
+            player.grantRespawnInvincibility();
+
+            // Update widget manager with restored player
+            if (this.widgetManager) {
+              this.widgetManager.setPlayer(player);
+            }
+          });
 
           return; // Don't game over yet
         }
@@ -1672,6 +1680,7 @@ export class GameScene extends Phaser.Scene {
       const safeX = Math.max(100, this.cameras.main.scrollX + 120);
       const groundY = this.cameras.main.height - GameConfig.GROUND_OFFSET;
       player.reset(safeX, groundY);
+      player.grantRespawnInvincibility();
 
       if (this.widgetManager) {
         this.widgetManager.setPlayer(player);
@@ -2378,8 +2387,9 @@ export class GameScene extends Phaser.Scene {
    * Retained as a fallback when scene-based routing returns no key.
    */
   private getLevelMusicTrack(levelIndex: number): string {
-    // Level 3 uses the boss fight track — more intense for "The Finale"
-    const tracks = ['level1', 'level2', 'bossFight'];
+    // Level 3 reuses dario-theme for ambient gameplay;
+    // bossFight is reserved for Tony's entrance specifically.
+    const tracks = ['level1', 'level2', 'level2'];
     return tracks[levelIndex] ?? 'level1';
   }
 
@@ -2643,6 +2653,62 @@ export class GameScene extends Phaser.Scene {
       // Thin white border for readability
       this.offScreenArrows.lineStyle(1.5, 0xffffff, 0.6);
       this.offScreenArrows.strokeTriangle(tipX, tipY, blX, blY, brX, brY);
+    });
+  }
+
+  /**
+   * "PLAYER DOWN" card shown when the player loses a life.
+   * Freezes player input briefly, then calls `onComplete` to respawn.
+   */
+  private showPlayerDownCard(onComplete: () => void): void {
+    const { width, height } = this.cameras.main;
+
+    // Freeze player input during the card
+    if (this.playerUpdateManager) {
+      this.playerUpdateManager.setInputFrozen(true);
+    }
+
+    // Dark full-screen flash
+    this.cameras.main.flash(200, 50, 0, 0);
+
+    const bar = this.add.rectangle(width / 2, height / 2, width, 80, 0x000000, 0.88)
+      .setScrollFactor(0).setDepth(1950).setAlpha(0);
+
+    const text = this.add.text(width / 2, height / 2, 'PLAYER DOWN', {
+      fontFamily: '"Press Start 2P", monospace',
+      fontSize: '28px',
+      color: '#ff2222',
+      stroke: '#000000',
+      strokeThickness: 6,
+      fontStyle: 'bold',
+    }).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(1951).setAlpha(0).setScale(0.5);
+
+    this.tweens.add({
+      targets: [bar, text],
+      alpha: 1,
+      scaleX: 1,
+      scaleY: 1,
+      duration: 280,
+      ease: 'Back.easeOut',
+      onComplete: () => {
+        // Hold ~1.2 s then fade out and respawn
+        this.time.delayedCall(1200, () => {
+          this.tweens.add({
+            targets: [bar, text],
+            alpha: 0,
+            duration: 300,
+            ease: 'Linear',
+            onComplete: () => {
+              bar.destroy();
+              text.destroy();
+              if (this.playerUpdateManager) {
+                this.playerUpdateManager.setInputFrozen(false);
+              }
+              onComplete();
+            },
+          });
+        });
+      },
     });
   }
 

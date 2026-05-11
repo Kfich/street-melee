@@ -1663,6 +1663,32 @@ export abstract class BaseCharacter extends BaseEntity {
   }
 
   /**
+   * Grant post-respawn invincibility with a visible blink.
+   * Call this immediately after reset() so the player isn't immediately hit.
+   * Blinks for ~1.5 s and grants 2 s of i-frames total.
+   */
+  grantRespawnInvincibility(): void {
+    if (!this.sprite || !this.sprite.active) return;
+
+    this.invincibilityFrames = 120; // 2 s @ 60 fps
+
+    // 9 alpha pulses over ~1.5 s (same rhythm as onGetUp but longer)
+    this.scene.tweens.add({
+      targets: this.sprite,
+      alpha: { from: 1, to: 0.2 },
+      duration: 90,
+      yoyo: true,
+      repeat: 8,
+      ease: 'Linear',
+      onComplete: () => {
+        if (this.sprite && this.sprite.active) {
+          this.sprite.setAlpha(1);
+        }
+      },
+    });
+  }
+
+  /**
    * Get character type
    */
   getCharacterType(): CharacterType {
